@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0c1715">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="IMRS">
+<title>IMRS — Investment Research OS</title>
+<style>
+:root{--ink:#12201d;--muted:#65726f;--line:#dce5e1;--paper:#f3f7f5;--white:#fff;--accent:#17765c;--danger:#a43e3e}
+*{box-sizing:border-box}html{background:var(--paper)}body{margin:0;color:var(--ink);background:var(--paper);font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,input,select,textarea{font:inherit}button{border:0;cursor:pointer;background:var(--accent);color:white;border-radius:10px;padding:10px 14px;font-weight:750}
+.topbar{padding:max(12px,env(safe-area-inset-top)) 16px 12px;display:flex;align-items:center;justify-content:space-between;background:#0c1715;color:#fff;position:sticky;top:0;z-index:10}
+.brand{display:flex;align-items:center;gap:10px}.brandmark{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;background:var(--accent);font-size:22px;font-weight:900}.brand small{display:block;color:#9fb0aa;font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+.actions{display:flex;gap:7px}.secondary{background:#20312d}.upload input{display:none}
+.shell{max-width:1200px;margin:auto;padding:16px}.intro,.hero,.sectionHead,.footerActions{display:flex;justify-content:space-between;align-items:center;gap:18px}
+.intro h1{margin:3px 0}.intro p{color:var(--muted)}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.13em;color:var(--accent);font-weight:900}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.stat,.panel,.hero{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 7px 25px rgba(20,50,42,.035)}
+.stat{padding:16px}.stat span,.stat strong{display:block}.stat span{font-size:12px;color:var(--muted)}.stat strong{font-size:27px;margin-top:8px}
+.panel{padding:16px}.tableWrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:13px 9px;border-top:1px solid var(--line)}th{font-size:11px;color:var(--muted);text-transform:uppercase}tbody tr{cursor:pointer}td small{display:block;color:var(--muted);margin-top:3px}
+.pill{background:#edf4f1;padding:6px 9px;border-radius:20px;font-size:12px}.scoreBubble{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#dcefe8;font-weight:900}
+.hero{padding:18px}.identity{flex:1}.companyName{font-size:29px;font-weight:850;border:0;outline:0;width:100%;background:transparent}.meta{display:grid;grid-template-columns:.7fr 1.4fr 1fr 1fr;gap:8px;margin-top:12px}
+input,select,textarea{width:100%;border:1px solid #cad7d2;background:#fff;border-radius:9px;padding:10px;color:var(--ink)}
+.heroScore{min-width:150px;text-align:center;background:#0c1715;color:#fff;border-radius:14px;padding:13px}.heroScore span,.heroScore small{display:block;color:#a9bab5}.heroScore strong{font-size:40px}
+.tabs{display:flex;gap:7px;overflow-x:auto;padding:14px 0;position:sticky;top:64px;background:var(--paper);z-index:6}.tabs button{white-space:nowrap;background:#e1e9e6;color:#2c3c37}.tabs button.active{background:var(--accent);color:#fff}
+.two,.three,.scoreGrid{display:grid;gap:12px}.two{grid-template-columns:repeat(2,1fr)}.three{grid-template-columns:repeat(3,1fr)}.scoreGrid{grid-template-columns:repeat(2,1fr)}
+.textCard textarea{min-height:180px;resize:vertical}.textCard h3{margin-top:0}.scoreItem>div{display:flex;justify-content:space-between}.scoreItem input{margin-top:16px;accent-color:var(--accent)}
+.stack{display:grid;gap:9px}.row{display:grid;gap:8px}.riskRow{grid-template-columns:1.2fr .6fr .6fr 1.3fr auto}.catRow{grid-template-columns:1.2fr .8fr .8fr 1.3fr auto}.reviewHead{display:grid;grid-template-columns:1fr 1fr auto;gap:8px}.review textarea{min-height:130px;margin-top:9px}
+.icon{padding:8px 12px}.danger{background:var(--danger)}.valuation label{display:block;color:var(--muted);font-size:12px;margin-top:9px}.valuation label input{margin-top:5px}.implied{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}.implied span,.implied strong{display:block}.implied strong{font-size:26px}.weighted{text-align:center;margin-top:12px}.weighted strong{display:block;font-size:38px}.weighted small{color:var(--muted)}
+.footerActions{margin:18px 0;padding-bottom:env(safe-area-inset-bottom);color:var(--muted);font-size:12px}.hidden{display:none!important}.searchbar{display:flex;gap:8px;margin-bottom:12px}.searchbar input{flex:1}
+@media(max-width:800px){.stats{grid-template-columns:repeat(2,1fr)}.two,.three,.scoreGrid{grid-template-columns:1fr}.meta{grid-template-columns:1fr 1fr}.riskRow,.catRow{grid-template-columns:1fr 1fr}.riskRow .icon,.catRow .icon{grid-column:2}}
+@media(max-width:620px){.brand small{display:none}.actions .secondary{display:none}.shell{padding:12px}.intro,.hero{align-items:flex-start;flex-direction:column}.intro p{margin-top:0}.heroScore{width:100%;display:flex;align-items:center;justify-content:center;gap:7px}.heroScore span,.heroScore small{display:inline}.heroScore strong{font-size:29px}.meta{grid-template-columns:1fr 1fr}.riskRow,.catRow,.reviewHead{grid-template-columns:1fr}.riskRow .icon,.catRow .icon{grid-column:auto}.tabs{top:64px}.topbar button{padding:9px 11px}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><div class="brandmark">I</div><div><strong>IMRS</strong><small>Investment Research OS</small></div></div>
+  <div class="actions">
+    <button class="secondary" onclick="exportData()">Export</button>
+    <label class="secondary upload" style="padding:10px 14px;border-radius:10px;font-weight:750">Import<input id="importFile" type="file" accept=".json"></label>
+    <button onclick="createCompany()">+ Company</button>
+  </div>
+</header>
+<main class="shell">
+<section id="dashboard">
+  <div class="intro"><div><span class="eyebrow">Research command centre</span><h1>Investment Dashboard</h1></div><p>Evidence-led research for Indian small-cap and micro-cap opportunities.</p></div>
+  <div class="stats">
+    <div class="stat"><span>Companies tracked</span><strong id="statTotal">0</strong></div>
+    <div class="stat"><span>Owned positions</span><strong id="statOwned">0</strong></div>
+    <div class="stat"><span>Buy candidates</span><strong id="statBuy">0</strong></div>
+    <div class="stat"><span>Average score</span><strong id="statAvg">0/100</strong></div>
+  </div>
+  <section class="panel">
+    <div class="sectionHead"><div><span class="eyebrow">Ranked universe</span><h2>Research pipeline</h2></div></div>
+    <div class="searchbar"><input id="search" placeholder="Search companies…" oninput="renderDashboard()"></div>
+    <div class="tableWrap"><table><thead><tr><th>Company</th><th>Sector</th><th>Status</th><th>Market cap</th><th>Score</th></tr></thead><tbody id="companyRows"></tbody></table></div>
+  </section>
+</section>
+
+<section id="workspace" class="hidden">
+  <section class="hero">
+    <div class="identity">
+      <input id="name" class="companyName" oninput="setField('name',this.value)">
+      <div class="meta">
+        <input id="ticker" placeholder="Ticker" oninput="setField('ticker',this.value.toUpperCase())">
+        <input id="sector" placeholder="Sector" oninput="setField('sector',this.value)">
+        <input id="marketCap" type="number" placeholder="Market cap ₹ cr" oninput="setField('marketCap',this.value)">
+        <select id="status" onchange="setField('status',this.value)"><option>Watchlist</option><option>Researching</option><option>Buy Candidate</option><option>Owned</option><option>Avoid</option><option>Exited</option></select>
+      </div>
+    </div>
+    <div class="heroScore"><span>Conviction score</span><strong id="score">0</strong><small>/100</small></div>
+  </section>
+  <nav class="tabs" id="tabs"></nav>
+  <div id="content"></div>
+  <div class="footerActions"><span>Saved automatically on this device</span><div><button class="secondary" onclick="showDashboard()">Dashboard</button> <button class="danger" onclick="deleteCompany()">Delete</button></div></div>
+</section>
+</main>
+<script>
+const KEY='imrs_singlefile_v3';
+const labels={businessQuality:'Business quality',managementQuality:'Management quality',financialStrength:'Financial strength',growthRunway:'Growth runway',moat:'Competitive moat',governance:'Governance',valuation:'Valuation attractiveness',cashFlowQuality:'Cash-flow quality',industryTailwinds:'Industry tailwinds',riskReward:'Risk–reward'};
+let companies=[],selectedId='',activeTab='overview';
+const tabs=[['overview','Overview'],['scorecard','Scorecard'],['thesis','Thesis'],['risks','Risks'],['catalysts','Catalysts'],['reviews','Quarterly Reviews'],['valuation','Valuation']];
+function id(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+function blank(){return{id:id(),name:'Untitled Company',ticker:'',sector:'',marketCap:'',status:'Watchlist',businessSummary:'',multibaggerCase:'',industryOpportunity:'',managementAssessment:'',bullThesis:'',bearThesis:'',keyAssumptions:'',thesisKillers:'',scores:Object.fromEntries(Object.keys(labels).map(k=>[k,5])),risks:[],catalysts:[],reviews:[],valuation:{bear:{revenueGrowth:'',eps:'',pe:'',probability:'25'},base:{revenueGrowth:'',eps:'',pe:'',probability:'50'},bull:{revenueGrowth:'',eps:'',pe:'',probability:'25'}}}}
+function demo(){let c=blank();return Object.assign(c,{name:'Sample Small Cap Ltd',ticker:'SAMPLE',sector:'Industrial Manufacturing',marketCap:'1500',status:'Researching',businessSummary:'Replace this sample with the company’s products, customers, revenue model, geography and unit economics.',multibaggerCase:'A large addressable market, capacity expansion and disciplined reinvestment could create long-term compounding.',industryOpportunity:'Map industry size, structural growth, policy support, competition and market-share runway.',managementAssessment:'Assess promoter integrity, governance, execution and capital allocation.',bullThesis:'Build the strongest evidence-backed upside case.',bearThesis:'Build the strongest evidence-backed downside case.',keyAssumptions:'List every assumption that must hold.',thesisKillers:'Define evidence requiring an exit or reassessment.',scores:{businessQuality:7,managementQuality:7,financialStrength:6,growthRunway:8,moat:6,governance:7,valuation:5,cashFlowQuality:6,industryTailwinds:8,riskReward:7},risks:[{title:'Customer concentration',probability:'Medium',impact:'High',mitigation:'Track top-customer share and diversification.'}],catalysts:[{title:'New capacity commissioning',date:'',status:'Expected',notes:'Monitor project timeline and utilization.'}],reviews:[{quarter:'Q1 FY27',verdict:'Unchanged',notes:'Record results, guidance, execution, valuation and thesis changes.'}],valuation:{bear:{revenueGrowth:'10',eps:'20',pe:'15',probability:'25'},base:{revenueGrowth:'20',eps:'35',pe:'25',probability:'50'},bull:{revenueGrowth:'30',eps:'50',pe:'35',probability:'25'}}})}
+function save(){localStorage.setItem(KEY,JSON.stringify(companies))}
+function cur(){return companies.find(c=>c.id===selectedId)}
+function score(c){let v=Object.values(c.scores).map(Number);return Math.round(v.reduce((a,b)=>a+b,0)/v.length*10)}
+function init(){try{companies=JSON.parse(localStorage.getItem(KEY))||[demo()]}catch{companies=[demo()]}save();renderDashboard();document.getElementById('importFile').onchange=importData}
+function renderDashboard(){document.getElementById('dashboard').classList.remove('hidden');document.getElementById('workspace').classList.add('hidden');let q=(document.getElementById('search').value||'').toLowerCase();let filtered=companies.filter(c=>(c.name+' '+c.ticker+' '+c.sector+' '+c.status).toLowerCase().includes(q)).sort((a,b)=>score(b)-score(a));document.getElementById('statTotal').textContent=companies.length;document.getElementById('statOwned').textContent=companies.filter(c=>c.status==='Owned').length;document.getElementById('statBuy').textContent=companies.filter(c=>c.status==='Buy Candidate').length;document.getElementById('statAvg').textContent=(companies.length?Math.round(companies.reduce((s,c)=>s+score(c),0)/companies.length):0)+'/100';document.getElementById('companyRows').innerHTML=filtered.map(c=>`<tr onclick="openCompany('${c.id}')"><td><strong>${esc(c.name)}</strong><small>${esc(c.ticker)}</small></td><td>${esc(c.sector||'—')}</td><td><span class="pill">${esc(c.status)}</span></td><td>${c.marketCap?'₹'+Number(c.marketCap).toLocaleString('en-IN')+' cr':'—'}</td><td><span class="scoreBubble">${score(c)}</span></td></tr>`).join('')}
+function showDashboard(){save();renderDashboard()}
+function createCompany(){let c=blank();companies.unshift(c);selectedId=c.id;save();openCompany(c.id)}
+function openCompany(i){selectedId=i;activeTab='overview';document.getElementById('dashboard').classList.add('hidden');document.getElementById('workspace').classList.remove('hidden');renderWorkspace()}
+function renderWorkspace(){let c=cur();if(!c)return showDashboard();['name','ticker','sector','marketCap','status'].forEach(k=>document.getElementById(k).value=c[k]);document.getElementById('score').textContent=score(c);document.getElementById('tabs').innerHTML=tabs.map(([id,label])=>`<button class="${activeTab===id?'active':''}" onclick="setTab('${id}')">${label}</button>`).join('');renderTab()}
+function setTab(t){activeTab=t;renderWorkspace()}
+function setField(k,v){cur()[k]=v;save();if(k==='name'){}}
+function textCard(title,key,ph){return `<article class="panel textCard"><h3>${title}</h3><textarea placeholder="${ph}" oninput="setField('${key}',this.value)">${esc(cur()[key])}</textarea></article>`}
+function renderTab(){let c=cur(),out='';if(activeTab==='overview')out=`<div class="two">${textCard('Business summary','businessSummary','Products, customers, revenue model, geography and unit economics…')}${textCard('Multibagger case','multibaggerCase','Why could intrinsic value compound over 5–10 years?')}${textCard('Industry opportunity','industryOpportunity','TAM, structural tailwinds, competition and market-share runway…')}${textCard('Management assessment','managementAssessment','Integrity, execution, governance and capital allocation…')}</div>`;
+if(activeTab==='thesis')out=`<div class="two">${textCard('Bull thesis','bullThesis','Strongest evidence-backed upside case…')}${textCard('Bear thesis','bearThesis','Strongest evidence-backed downside case…')}${textCard('Key assumptions','keyAssumptions','What must be true?')}${textCard('Thesis killers','thesisKillers','What evidence requires exit or reassessment?')}</div>`;
+if(activeTab==='scorecard')out=`<div class="scoreGrid">${Object.entries(labels).map(([k,l])=>`<article class="panel scoreItem"><div><strong>${l}</strong><span id="sv_${k}">${c.scores[k]}/10</span></div><input type="range" min="0" max="10" value="${c.scores[k]}" oninput="setScore('${k}',this.value)"></article>`).join('')}</div>`;
+if(activeTab==='risks')out=`<section class="panel"><div class="sectionHead"><div><span class="eyebrow">Downside laboratory</span><h2>Risk register</h2></div><button onclick="addRisk()">+ Risk</button></div><div class="stack">${c.risks.map((r,i)=>`<div class="row riskRow"><input placeholder="Risk" value="${attr(r.title)}" oninput="changeRisk(${i},'title',this.value)"><select onchange="changeRisk(${i},'probability',this.value)">${opts(['Low','Medium','High'],r.probability)}</select><select onchange="changeRisk(${i},'impact',this.value)">${opts(['Low','Medium','High'],r.impact)}</select><input placeholder="Mitigation or trigger" value="${attr(r.mitigation)}" oninput="changeRisk(${i},'mitigation',this.value)"><button class="icon danger" onclick="removeRisk(${i})">×</button></div>`).join('')}</div></section>`;
+if(activeTab==='catalysts')out=`<section class="panel"><div class="sectionHead"><div><span class="eyebrow">Re-rating triggers</span><h2>Catalyst tracker</h2></div><button onclick="addCatalyst()">+ Catalyst</button></div><div class="stack">${c.catalysts.map((r,i)=>`<div class="row catRow"><input placeholder="Catalyst" value="${attr(r.title)}" oninput="changeCat(${i},'title',this.value)"><input type="date" value="${attr(r.date)}" onchange="changeCat(${i},'date',this.value)"><select onchange="changeCat(${i},'status',this.value)">${opts(['Expected','In Progress','Delivered','Delayed','Failed'],r.status)}</select><input placeholder="Evidence and notes" value="${attr(r.notes)}" oninput="changeCat(${i},'notes',this.value)"><button class="icon danger" onclick="removeCat(${i})">×</button></div>`).join('')}</div></section>`;
+if(activeTab==='reviews')out=`<section><div class="sectionHead"><div><span class="eyebrow">Living investment journal</span><h2>Quarterly reviews</h2></div><button onclick="addReview()">+ Review</button></div><div class="stack">${c.reviews.map((r,i)=>`<article class="panel review"><div class="reviewHead"><input placeholder="Quarter, e.g. Q1 FY27" value="${attr(r.quarter)}" oninput="changeReview(${i},'quarter',this.value)"><select onchange="changeReview(${i},'verdict',this.value)">${opts(['Thesis Stronger','Unchanged','Thesis Weaker','Exit Triggered'],r.verdict)}</select><button class="icon danger" onclick="removeReview(${i})">×</button></div><textarea placeholder="Results, guidance, execution, valuation and required action…" oninput="changeReview(${i},'notes',this.value)">${esc(r.notes)}</textarea></article>`).join('')}</div></section>`;
+if(activeTab==='valuation'){let cases=['bear','base','bull'],weighted=cases.reduce((s,k)=>{let v=c.valuation[k];return s+(+v.eps||0)*(+v.pe||0)*(+v.probability||0)/100},0);out=`<div class="three">${cases.map(k=>{let v=c.valuation[k],p=(+v.eps||0)*(+v.pe||0);return `<article class="panel valuation"><span class="eyebrow">${k} case</span>${valInput(k,'revenueGrowth','Revenue CAGR %',v.revenueGrowth)}${valInput(k,'eps','Future EPS ₹',v.eps)}${valInput(k,'pe','Exit P/E',v.pe)}${valInput(k,'probability','Probability %',v.probability)}<div class="implied"><span>Implied price</span><strong>₹${p.toLocaleString('en-IN')}</strong></div></article>`}).join('')}</div><article class="panel weighted"><span>Probability-weighted expected price</span><strong>₹${Math.round(weighted).toLocaleString('en-IN')}</strong><small>Scenario output, not a guaranteed target</small></article>`}
+document.getElementById('content').innerHTML=out}
+function valInput(k,f,l,v){return `<label>${l}<input type="number" value="${attr(v)}" oninput="setVal('${k}','${f}',this.value)"></label>`}
+function setVal(k,f,v){cur().valuation[k][f]=v;save();renderTab()}
+function setScore(k,v){cur().scores[k]=+v;document.getElementById('sv_'+k).textContent=v+'/10';document.getElementById('score').textContent=score(cur());save()}
+function addRisk(){cur().risks.push({title:'',probability:'Medium',impact:'Medium',mitigation:''});save();renderTab()}function changeRisk(i,k,v){cur().risks[i][k]=v;save()}function removeRisk(i){cur().risks.splice(i,1);save();renderTab()}
+function addCatalyst(){cur().catalysts.push({title:'',date:'',status:'Expected',notes:''});save();renderTab()}function changeCat(i,k,v){cur().catalysts[i][k]=v;save()}function removeCat(i){cur().catalysts.splice(i,1);save();renderTab()}
+function addReview(){cur().reviews.unshift({quarter:'',verdict:'Unchanged',notes:''});save();renderTab()}function changeReview(i,k,v){cur().reviews[i][k]=v;save()}function removeReview(i){cur().reviews.splice(i,1);save();renderTab()}
+function deleteCompany(){let c=cur();if(c&&confirm('Delete '+c.name+'?')){companies=companies.filter(x=>x.id!==c.id);save();showDashboard()}}
+function exportData(){let blob=new Blob([JSON.stringify(companies,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='imrs-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(u)}
+function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{let d=JSON.parse(r.result);if(!Array.isArray(d))throw 0;companies=d;save();renderDashboard()}catch{alert('Invalid IMRS backup')}};r.readAsText(f);e.target.value=''}
+function opts(a,s){return a.map(x=>`<option ${x===s?'selected':''}>${x}</option>`).join('')}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function attr(s){return esc(s).replace(/"/g,'&quot;')}
+init();
+</script>
+</body>
+</html>
