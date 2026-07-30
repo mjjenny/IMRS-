@@ -1936,6 +1936,342 @@ function cleanTrendlyneIntel(title: string, value: string) {
     .trim() || compactText(value, 900);
 }
 
+function cleanEvidenceText(title: string, value: string, max = 1200) {
+  const clean = cleanTrendlyneIntel(title, value)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !isRawEvidenceLine(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return compactText(clean, max);
+}
+
+function metricEntry(
+  label: string,
+  value: string,
+  unit: string,
+  period: string,
+  basis: string,
+  status = value ? "available" : "missing",
+  note = ""
+) {
+  return {
+    label,
+    value: value || "",
+    unit,
+    period: value ? period : "missing",
+    basis,
+    status,
+    note
+  };
+}
+
+function buildMetricsForPacket(company: Company, record?: FundamentalsRecord) {
+  const m = metricSet(company, record);
+  const review = dataQualityReview(company, record);
+  const period = metricPeriod(record);
+  const derived = derivedPe(company, record);
+  const netMargin = netMarginProxy(company, record);
+  const entries = [
+    metricEntry("Market capitalisation", m.marketCap, "INR crore", period, record ? record.source : "IMRS company record"),
+    metricEntry("Current price", m.currentPrice, "INR/share", period, company.financials.currentPrice ? "Kite/company record" : "missing"),
+    metricEntry("Revenue", m.revenue, "INR crore", period, record ? record.source : "IMRS company record"),
+    metricEntry("Net profit", m.profit, "INR crore", period, record ? record.source : "IMRS company record"),
+    metricEntry(
+      "EPS",
+      review.perShareMismatch || review.shareCountMismatch ? "" : m.eps,
+      "INR/share",
+      period,
+      record ? record.source : "IMRS company record",
+      review.perShareMismatch || review.shareCountMismatch ? "withheld" : m.eps ? "available" : "missing",
+      review.perShareMismatch || review.shareCountMismatch ? "Withheld because EPS/P/E/price or share-count basis failed validation." : ""
+    ),
+    metricEntry(
+      "P/E",
+      review.peInvalid && derived ? formatNumber(derived, 2) : review.peInvalid ? "" : m.pe,
+      "x",
+      period,
+      review.peInvalid && derived ? "derived from price/EPS" : record ? record.source : "IMRS company record",
+      review.peInvalid && !derived ? "withheld" : m.pe || derived ? "available" : "missing",
+      review.peInvalid && derived ? "Raw P/E failed validation; derived value should be used cautiously." : ""
+    ),
+    metricEntry("ROE", m.roe, "%", period, record ? record.source : "IMRS company record"),
+    metricEntry("ROCE", m.roce, "%", period, record ? record.source : "IMRS company record"),
+    metricEntry("Debt/equity", m.debtEquity, "x", period, record ? record.source : "IMRS company record"),
+    metricEntry(
+      "Operating margin",
+      review.opmInvalid ? "" : m.opm,
+      "%",
+      period,
+      record ? record.source : "IMRS company record",
+      review.opmInvalid ? "withheld" : m.opm ? "available" : "missing",
+      review.opmInvalid ? "Suppressed because the margin value failed validation." : ""
+    ),
+    metricEntry("Net margin proxy", netMargin ? formatNumber(netMargin, 2) : "", "%", period, "derived from net profit/revenue"),
+    metricEntry(
+      "Operating cash flow",
+      review.cfoInvalid ? "" : m.cfo,
+      "INR crore",
+      period,
+      record ? record.source : "IMRS company record",
+      review.cfoInvalid ? "withheld" : m.cfo ? "available" : "missing",
+      review.cfoInvalid ? "Suppressed because cash-flow value failed unit/magnitude validation." : ""
+    ),
+    metricEntry("Sales growth", m.salesGrowth, "%", period, record ? record.source : "IMRS company record"),
+    metricEntry("Profit growth", m.profitGrowth, "%", period, record ? record.source : "IMRS company record"),
+    metricEntry("Promoter holding", m.promoterHolding, "%", period, record ? record.source : "IMRS company record"),
+    metricEntry("FII holding", m.fiiHolding, "%", period, record ? record.source : "IMRS company record"),
+    metricEntry("DII holding", m.diiHolding, "%", period, record ? record.source : "IMRS company record"),
+    metricEntry("Institutional holding", m.institutionalHolding, "%", period, record ? record.source : "IMRS company record"),
+    metricEntry("Durability score", m.dvmDurability, "score", period, record ? record.source : "IMRS company record"),
+    metricEntry("Valuation score", m.dvmValuation, "score", period, record ? record.source : "IMRS company record"),
+    metricEntry("Momentum score", m.dvmMomentum, "score", period, record ? record.source : "IMRS company record"),
+    metricEntry("Analyst score", m.analystScore, "score", period, record ? record.source : "IMRS company record")
+  ];
+
+  return entries;
+}
+
+function buildOwnershipForPacket(company: Company, record?: FundamentalsRecord, shareholding?: ShareholdingRecord, intelligence?: TrendlyneIntelligenceRecord) {
+  return {
+    latest: ownershipLines(company, record),
+    exchangeFiling: shareholding
+      ? {
+          asOnDate: shareholding.asOnDate || "Undated/Unverified",
+          submissionDate: shareholding.submissionDate || "Undated/Unverified",
+          promoterHolding: shareholding.promoterHolding,
+          publicHolding: shareholding.publicHolding,
+          employeeTrusts: shareholding.employeeTrusts,
+          history: shareholding.history.slice(0, 8)
+        }
+      : null,
+    trend: intelligence ? cleanEvidenceText("Ownership", intelligence.shareholding, 1200) : "",
+    insiderSast: intelligence ? cleanEvidenceText("Insider / SAST", intelligence.sast, 1000) : "",
+    bulkBlockDeals: intelligence ? cleanEvidenceText("Bulk and block deals", intelligence.bulkBlock, 1000) : ""
+  };
+}
+
+function buildIntelligenceDigest(intelligence?: TrendlyneIntelligenceRecord) {
+  if (!intelligence) {
+    return {
+      overview: "",
+      technicals: "",
+      news: [],
+      corporateEvents: [],
+      documents: [],
+      ownership: "",
+      insiderSast: "",
+      bulkBlockDeals: ""
+    };
+  }
+
+  return {
+    overview: cleanEvidenceText("Overview and DVM", intelligence.overview, 1400),
+    technicals: cleanEvidenceText("Technicals", intelligence.technical, 1000),
+    news: extractNewsRows(intelligence.news),
+    corporateEvents: cleanEvidenceText("Corporate events", intelligence.events, 1200),
+    documents: extractDocumentRows(intelligence.documents),
+    ownership: cleanEvidenceText("Ownership", intelligence.shareholding, 1200),
+    insiderSast: cleanEvidenceText("Insider / SAST", intelligence.sast, 1000),
+    bulkBlockDeals: cleanEvidenceText("Bulk and block deals", intelligence.bulkBlock, 1000)
+  };
+}
+
+function buildValuationForPacket(company: Company, record?: FundamentalsRecord) {
+  return {
+    validation: {
+      hasInvalidCases: hasInvalidValuationCases(company, record),
+      notes: (["bear", "base", "bull"] as const)
+        .map((key) => {
+          const issue = valuationCaseIssue(company, company.valuation[key], record);
+          return issue ? `${key.toUpperCase()}: ${issue}` : "";
+        })
+        .filter(Boolean)
+    },
+    scenarios: (["bear", "base", "bull"] as const).map((key) => ({
+      case: key,
+      revenueCagr: company.valuation[key].revenueGrowth,
+      futureEps: company.valuation[key].eps,
+      exitPe: company.valuation[key].pe,
+      probability: company.valuation[key].probability,
+      impliedPrice: valuationPriceText(company, company.valuation[key], record)
+    })),
+    weightedExpectedPrice: weightedExpectedPriceText(company, record)
+  };
+}
+
+function buildSavedNotesForPacket(company: Company, record?: FundamentalsRecord) {
+  return {
+    businessSummary: savedResearchText(company.businessSummary, businessModelDraft(company, record)),
+    industryOpportunity: savedResearchText(
+      company.industryOpportunity,
+      `Industry exposure: ${inferredSector(company, record)}. Verify market size, end-market demand, competition, capacity and margin runway.`
+    ),
+    multibaggerCase: savedResearchText(company.multibaggerCase, "Build a 5x/10x case only from verified growth, ROCE, moat, reinvestment and valuation evidence."),
+    managementAssessment: savedResearchText(company.managementAssessment, "Assess promoter quality, capital allocation, governance, auditor history and execution."),
+    bullThesis: savedResearchText(company.bullThesis, "Build the upside case from verified growth, margin, cash-flow, moat and valuation evidence."),
+    bearThesis: savedResearchText(company.bearThesis, "Build the downside case from valuation, execution, governance, cash conversion and cyclicality risk."),
+    keyAssumptions: savedResearchText(company.keyAssumptions, "List only assumptions required to justify upside and current valuation."),
+    thesisKillers: savedResearchText(company.thesisKillers, "List evidence that would invalidate the investment thesis.")
+  };
+}
+
+function packetSafeLabel(value: string) {
+  return value
+    .replace(/^Trendlyne\s+/i, "")
+    .replace(/\bTrendlyne\b/gi, "Market intelligence")
+    .replace(/\bKite\b/gi, "Market price")
+    .replace(/\bNSE\b/gi, "Exchange")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function packetSafeText(value: string) {
+  return scrubReportText(value)
+    .replace(/\bTrendlyne\b/gi, "market intelligence")
+    .replace(/\bKite\b/gi, "market price")
+    .replace(/\bNSE\b/gi, "exchange")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function buildReportBriefForPacket(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
+  const diagnostics = investmentDiagnostics(company, record, intelligence);
+  const review = dataQualityReview(company, record, intelligence);
+  const framework = isMegaCapCompany(company, record) ? "Large-cap compounder/re-rating lens" : "Multibagger and trap-risk lens";
+
+  return {
+    framework,
+    preliminaryVerdict: diagnostics.finalVerdict,
+    convictionScore: score(company),
+    multibaggerProbability: diagnostics.multibaggerProbability,
+    trapProbability: diagnostics.trapProbability,
+    dataQualityGate: review.p0.length ? "failed" : "passed first-level checks",
+    analystFocus: [
+      "Explain the actual business model, revenue drivers, customers/end-markets, segment economics and competitive position.",
+      "Translate financials into business quality: growth durability, margin quality, return on capital, balance sheet and cash conversion.",
+      "Assess management quality through ownership, governance, capital allocation, auditor/related-party risk and execution evidence.",
+      "Evaluate valuation with scenario logic; do not allow invalid or mechanically extreme implied prices.",
+      "Separate genuine multibagger potential from popular-stock, high-valuation or deteriorating-fundamental traps."
+    ],
+    stockOnlyOutputRules: [
+      "The final report must discuss only the stock and investment analysis.",
+      "Do not mention app internals, raw payloads, data-provider reconciliation, tool names, connector errors or extraction mistakes.",
+      "If evidence is insufficient, state the investment implication and the exact real-world information still needed, without narrating the data pipeline.",
+      "Use time-stamped metrics only. If a number has no reliable period or unit, keep it out of the main table and discuss it as unverified."
+    ],
+    requiredFinalReportSections: [
+      "Executive verdict",
+      "Business model and segment economics",
+      "Industry runway and competitive position",
+      "Financial quality and unit sanity",
+      "Ownership, governance and management",
+      "Valuation and scenario analysis",
+      "Catalysts and monitoring triggers",
+      "Risks and potential trap indicators",
+      "Multibagger probability",
+      "What must happen for 5x/10x",
+      "What would make the thesis fail",
+      "Final recommendation and next diligence"
+    ]
+  };
+}
+
+function buildCleanCodexResearchPacket(
+  company: Company,
+  fundamentalsRecord?: FundamentalsRecord,
+  shareholdingRecord?: ShareholdingRecord,
+  trendlyneIntel?: TrendlyneIntelligenceRecord
+) {
+  const generatedAt = new Date().toISOString();
+  const diagnostics = investmentDiagnostics(company, fundamentalsRecord, trendlyneIntel);
+  const review = dataQualityReview(company, fundamentalsRecord, trendlyneIntel);
+  const cleanIntelligence = buildIntelligenceDigest(trendlyneIntel);
+
+  return {
+    packetType: "IMRS_CODEX_RESEARCH_PACKET",
+    version: "2.0",
+    generatedAt,
+    purpose:
+      "Provide a clean, analyst-ready evidence packet for Codex to create an institutional-grade, stock-only research report.",
+    codexTask:
+      "Use dynamic investment judgment, not fixed app scoring, to write the final report. Reconcile metrics, interpret the business case and produce a complete stock research view.",
+    reportBrief: buildReportBriefForPacket(company, fundamentalsRecord, trendlyneIntel),
+    companyProfile: {
+      name: company.name,
+      ticker: company.ticker,
+      sector: company.sector,
+      marketCapInrCr: company.marketCap,
+      status: company.status,
+      inferredSector: inferredSector(company, fundamentalsRecord)
+    },
+    evidenceSummary: {
+      sourceCoverage: sourceCoverageRows(company, fundamentalsRecord, trendlyneIntel).map(([source, status]) => ({ source, status })),
+      sanityCheck: sanityCheckItems(company, fundamentalsRecord, trendlyneIntel),
+      needsVerification: needsVerificationItems(company, fundamentalsRecord, trendlyneIntel),
+      dataQuality: {
+        p0: review.p0,
+        p1: review.p1,
+        notes: review.notes,
+        flags: {
+          perShareMismatch: review.perShareMismatch,
+          shareCountMismatch: review.shareCountMismatch,
+          cfoInvalid: review.cfoInvalid,
+          opmInvalid: review.opmInvalid,
+          peInvalid: review.peInvalid,
+          staleFinancials: review.staleFinancials,
+          conglomerateNeedsSegments: review.conglomerateNeedsSegments
+        }
+      },
+      diagnostics: {
+        preliminaryVerdict: diagnostics.finalVerdict,
+        multibaggerProbability: diagnostics.multibaggerProbability,
+        trapProbability: diagnostics.trapProbability,
+        weakReturns: diagnostics.weakReturns,
+        negativeProfit: diagnostics.negativeProfit,
+        expensive: diagnostics.expensive,
+        weakMomentum: diagnostics.weakMomentum,
+        severeRiskCount: diagnostics.severeRisks
+      }
+    },
+    financialMetrics: buildMetricsForPacket(company, fundamentalsRecord),
+    ownership: buildOwnershipForPacket(company, fundamentalsRecord, shareholdingRecord, trendlyneIntel),
+    marketAndEventEvidence: {
+      dvmAndOverview: cleanIntelligence.overview,
+      technicals: cleanIntelligence.technicals,
+      news: cleanIntelligence.news,
+      corporateEvents: cleanIntelligence.corporateEvents,
+      documentsToReview: cleanIntelligence.documents
+    },
+    savedResearchNotes: buildSavedNotesForPacket(company, fundamentalsRecord),
+    riskRegister: meaningfulRisks(company).map((risk) => ({
+      risk: packetSafeLabel(risk.title),
+      probability: risk.probability,
+      impact: risk.impact,
+      mitigationOrTrigger: packetSafeText(risk.mitigation) || packetSafeLabel(risk.mitigation)
+    })),
+    catalystTracker: meaningfulCatalysts(company).map((catalyst) => ({
+      catalyst: packetSafeLabel(catalyst.title),
+      expectedDate: catalyst.date || "",
+      status: catalyst.status,
+      evidenceOrMilestone: packetSafeText(catalyst.notes) || packetSafeLabel(catalyst.notes)
+    })),
+    documents: company.documents,
+    quarterlyReviews: company.reviews,
+    scorecard: (Object.entries(scoreLabels) as Array<[ScoreKey, string]>).map(([key, label]) => ({
+      label,
+      score: company.scores[key],
+      max: 10
+    })),
+    valuation: buildValuationForPacket(company, fundamentalsRecord),
+    appReferenceDraft:
+      "Do not treat this as the final report. Use it only as a checklist of issues the final stock-only report should consider.",
+    cleanedDraft: buildInvestmentReportText(company, fundamentalsRecord, trendlyneIntel)
+  };
+}
+
 function mergeDocuments(existing: Company["documents"], additions: Company["documents"]) {
   const names = new Set(existing.map((item) => normalizeKey(item.name)));
   return [
@@ -3109,44 +3445,7 @@ export default function Home() {
     const fundamentalsRecord = findFundamentals(selected.ticker, selected.name);
     const shareholdingRecord = findShareholding(selected.ticker, selected.name);
     const trendlyneIntel = findTrendlyneIntelligence(selected.ticker, selected.name);
-    const packet = {
-      packetType: "IMRS_CODEX_RESEARCH_PACKET",
-      version: "1.0",
-      generatedAt: new Date().toISOString(),
-      objective:
-        "Use Codex as the dynamic research engine. Reconcile the attached Kite, Trendlyne, NSE/shareholding and IMRS data into an institutional-grade stock research report.",
-      instructionsForCodex: [
-        "Do not rely on fixed app scoring alone. Inspect the company case-by-case.",
-        "Triangulate and reconcile source contradictions instead of leaving major sections blank.",
-        "Use audited filings/NSE disclosures first, Trendlyne next, Kite price next, and derived calculations only when labelled.",
-        "Produce a detailed report covering business model, financial quality, management, ownership, industry runway, valuation, catalysts, risks, multibagger potential and trap risk.",
-        "Flag data gaps, but still provide a provisional investment view with confidence level and exact follow-up source requests.",
-        "Never use negative P/E or negative implied target prices. Rebuild valuation from validated or derived inputs."
-      ],
-      company: selected,
-      fundamentals: fundamentalsRecord || null,
-      shareholding: shareholdingRecord || null,
-      trendlyne: trendlyneIntel || null,
-      appGeneratedReport: buildInvestmentReportText(selected, fundamentalsRecord, trendlyneIntel),
-      sourceCoverage: sourceCoverageRows(selected, fundamentalsRecord, trendlyneIntel).map(([source, status]) => ({ source, status })),
-      sanityCheck: sanityCheckItems(selected, fundamentalsRecord, trendlyneIntel),
-      needsVerification: needsVerificationItems(selected, fundamentalsRecord, trendlyneIntel),
-      valuation: {
-        bear: {
-          ...selected.valuation.bear,
-          impliedPrice: valuationPriceText(selected, selected.valuation.bear, fundamentalsRecord)
-        },
-        base: {
-          ...selected.valuation.base,
-          impliedPrice: valuationPriceText(selected, selected.valuation.base, fundamentalsRecord)
-        },
-        bull: {
-          ...selected.valuation.bull,
-          impliedPrice: valuationPriceText(selected, selected.valuation.bull, fundamentalsRecord)
-        },
-        weightedExpectedPrice: weightedExpectedPriceText(selected, fundamentalsRecord)
-      }
-    };
+    const packet = buildCleanCodexResearchPacket(selected, fundamentalsRecord, shareholdingRecord, trendlyneIntel);
 
     downloadJson(
       `${safeFileName(selected.ticker || selected.name)}-IMRS-Codex-Research-Packet-${new Date().toISOString().slice(0, 10)}.json`,
@@ -4164,7 +4463,7 @@ export default function Home() {
             </div>
             <div className="toolbar">
               <button className="secondary" onClick={exportCodexResearchPacket}>
-                <Download size={17} /> Export Evidence Packet
+                <Download size={17} /> Export Rich Packet
               </button>
               <label className="secondary file-label">
                 <Upload size={17} /> Import Final Report
@@ -4192,7 +4491,7 @@ export default function Home() {
             <article className="panel">
               <span className="eyebrow">Step 2</span>
               <h3>Export packet</h3>
-              <p>The packet carries all raw evidence to Codex for dynamic, case-by-case research.</p>
+              <p>The packet carries cleaned, analyst-ready evidence to Codex for dynamic, case-by-case research.</p>
             </article>
             <article className="panel">
               <span className="eyebrow">Step 3</span>
