@@ -27,6 +27,22 @@ npm audit --omit=dev
 
 This repository is already connected to the existing Vercel project. After changes are pushed to `main`, Vercel should redeploy the same live app URL.
 
+## Market Data
+
+Company search runs through the app backend at:
+
+```text
+/api/company-search
+```
+
+Without an API key, it uses the built-in starter directory. To enable live symbol search, add this environment variable in Vercel:
+
+```text
+TWELVE_DATA_API_KEY
+```
+
+Then redeploy the project.
+
 The old single-file version is preserved at:
 
 ```text

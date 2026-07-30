@@ -99,6 +99,24 @@ type AppData = {
   portfolio: PortfolioPosition[];
 };
 
+type CompanySearchResult = {
+  name: string;
+  ticker: string;
+  exchange: string;
+  sector: string;
+  marketCap: string;
+  currentPrice: string;
+  pe: string;
+  roe: string;
+  roce: string;
+  salesGrowth: string;
+  profitGrowth: string;
+  debtEquity: string;
+  promoterHolding: string;
+  note: string;
+  source?: string;
+};
+
 type PageId = "dashboard" | "search" | "screener" | "watchlist" | "portfolio" | "committee" | "research";
 type TabId =
   | "overview"
@@ -138,7 +156,7 @@ const tabs: Array<[TabId, string]> = [
   ["valuation", "Valuation"]
 ];
 
-const starterCompanies = [
+const starterCompanies: CompanySearchResult[] = [
   {
     name: "Central Depository Services (India) Ltd",
     ticker: "CDSL",
@@ -434,6 +452,9 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState("");
   const [sideQuery, setSideQuery] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<CompanySearchResult[]>(starterCompanies);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchMessage, setSearchMessage] = useState("Starter directory ready. Add a market-data API key for live search.");
   const [screen, setScreen] = useState({ roce: "15", growth: "15", debt: "1", pe: "50" });
 
   useEffect(() => {
@@ -462,14 +483,43 @@ export default function Home() {
     if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data, hydrated]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const response = await fetch(`/api/company-search?q=${encodeURIComponent(searchQuery)}`, {
+          signal: controller.signal
+        });
+        const payload = (await response.json()) as {
+          results?: CompanySearchResult[];
+          source?: string;
+          message?: string;
+        };
+        setSearchResults(payload.results || []);
+        setSearchMessage(payload.message || `Showing ${payload.source === "twelve-data" ? "live API" : "starter directory"} results.`);
+      } catch {
+        if (!controller.signal.aborted) {
+          setSearchResults([]);
+          setSearchMessage("Search failed. Please try again.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setSearchLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery, hydrated]);
+
   const selected = data.companies.find((company) => company.id === selectedId) || data.companies[0];
   const filteredMini = data.companies.filter((company) =>
     `${company.name} ${company.ticker}`.toLowerCase().includes(sideQuery.toLowerCase())
   );
   const ranked = useMemo(() => [...data.companies].sort((a, b) => score(b) - score(a)), [data.companies]);
-  const searchResults = starterCompanies.filter((company) =>
-    `${company.name} ${company.ticker} ${company.sector}`.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   function saveCompany(next: Company) {
     setData((current) => ({
@@ -486,7 +536,7 @@ export default function Home() {
     setActivePage("research");
   }
 
-  function importStarterCompany(item: (typeof starterCompanies)[number]) {
+  function importStarterCompany(item: CompanySearchResult) {
     const existing = data.companies.find((company) => company.ticker.toUpperCase() === item.ticker);
     if (existing) {
       setSelectedId(existing.id);
@@ -501,7 +551,7 @@ export default function Home() {
       sector: item.sector,
       marketCap: item.marketCap,
       status: "Researching",
-      dataSource: `${item.exchange} starter directory, imported ${new Date().toISOString().slice(0, 10)}`,
+      dataSource: `${item.source || item.exchange || "Company search"}, imported ${new Date().toISOString().slice(0, 10)}`,
       businessSummary: item.note,
       industryOpportunity: "Add primary-source evidence from filings, presentations and industry data.",
       financials: {
@@ -687,9 +737,15 @@ Verify all figures, review primary documents, test thesis killers and complete v
     return (
       <>
         <PageHead eyebrow="Company discovery" title="Company Search">
-          Search the starter Indian equity directory, then import a company into your research workspace.
+          Search the company directory, then import a company into your research workspace.
         </PageHead>
-        <section className="panel">
+        <form
+          className="panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (searchResults.length === 1) importStarterCompany(searchResults[0]);
+          }}
+        >
           <div className="toolbar">
             <input
               value={searchQuery}
@@ -698,26 +754,26 @@ Verify all figures, review primary documents, test thesis killers and complete v
             />
           </div>
           <div className="stack">
-            {(searchQuery ? searchResults : starterCompanies).map((company) => (
-              <div className="result-card" key={company.ticker}>
+            {searchLoading ? <p>Searching...</p> : null}
+            {searchResults.map((company) => (
+              <div className="result-card" key={`${company.exchange}-${company.ticker}`}>
                 <div>
                   <strong>{company.name}</strong>
                   <small>
                     {company.ticker} - {company.exchange} - {company.sector}
                   </small>
+                  <small>{company.source || "Company directory"}</small>
                   <small>{company.note}</small>
                 </div>
-                <button onClick={() => importStarterCompany(company)} title="Import company">
+                <button type="button" onClick={() => importStarterCompany(company)} title="Import company">
                   <Plus size={17} /> Import
                 </button>
               </div>
             ))}
-            {searchQuery && searchResults.length === 0 ? <p>No starter-directory match found.</p> : null}
+            {!searchLoading && searchQuery && searchResults.length === 0 ? <p>No matching company found.</p> : null}
           </div>
-          <div className="info">
-            Market data shown here is starter data for workflow testing. The next backend step will replace this with API-sourced data.
-          </div>
-        </section>
+          <div className="info">{searchMessage}</div>
+        </form>
       </>
     );
   }
@@ -1401,7 +1457,17 @@ Verify all figures, review primary documents, test thesis killers and complete v
 
       <div className="app">
         <aside className="sidebar">
-          <input value={sideQuery} onChange={(event) => setSideQuery(event.target.value)} placeholder="Search saved companies" />
+          <input
+            value={sideQuery}
+            onChange={(event) => setSideQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && sideQuery.trim()) {
+                setSearchQuery(sideQuery);
+                setActivePage("search");
+              }
+            }}
+            placeholder="Search saved companies"
+          />
           <div className="nav">
             {navItems.map(([id, label, icon]) => (
               <button className={activePage === id ? "active" : ""} onClick={() => setActivePage(id)} key={id}>
