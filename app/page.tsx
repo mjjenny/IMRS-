@@ -619,8 +619,9 @@ function scoreWord(value: string) {
 }
 
 function buildBusinessSummary(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
-  const overview = hasMeaningfulText(intelligence.overview)
-    ? compactText(intelligence.overview, 420)
+  const overviewText = cleanTrendlyneIntel("Overview and DVM", intelligence.overview);
+  const overview = hasMeaningfulText(overviewText)
+    ? compactText(overviewText, 420)
     : `${record.companyName || company.name} is classified under ${company.sector || "the imported Trendlyne/NSE universe"}.`;
 
   return `${overview}
@@ -636,7 +637,12 @@ Evidence snapshot: market cap INR ${metric(record.marketCap || company.marketCap
 
 function buildIndustryOpportunity(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
   const sectorLine = company.sector ? `${company.sector} sector exposure needs to be tested for industry growth, regulation, cyclicality and competition.` : "";
-  const recentEvidence = compactText([intelligence.news, intelligence.events].filter(hasMeaningfulText).join("\n\n"), 420);
+  const recentEvidence = compactText(
+    [cleanTrendlyneIntel("News and announcements", intelligence.news), cleanTrendlyneIntel("Corporate events", intelligence.events)]
+      .filter(hasMeaningfulText)
+      .join("\n\n"),
+    420
+  );
   return `${sectorLine || "Industry context should be verified from sector sources and company filings."}
 
 Trendlyne signal: sales growth is ${growthLabel(record.salesGrowth)} at ${metric(record.salesGrowth, "%")}; DVM momentum is ${metric(
@@ -649,7 +655,8 @@ function buildManagementAssessment(record: FundamentalsRecord, intelligence: Tre
     record.diiHolding,
     "%"
   )}; institutional holding ${metric(record.institutionalHolding, "%")}.`;
-  const sast = hasMeaningfulText(intelligence.sast) ? compactText(intelligence.sast, 360) : "No meaningful SAST/insider text was returned in this sync.";
+  const sastText = cleanTrendlyneIntel("Insider / SAST", intelligence.sast);
+  const sast = hasMeaningfulText(sastText) ? compactText(sastText, 360) : "No meaningful SAST/insider text was returned in this sync.";
   return `${ownership}
 
 Governance read-through: high promoter ownership can support alignment, but it is not proof of governance quality. Review pledges, related-party transactions, auditor notes, capital allocation and insider/SAST changes.
@@ -677,6 +684,9 @@ What must be proven next: large growth runway, durable moat, improving ROCE/ROE,
 }
 
 function buildBullThesis(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  const catalystText = [cleanTrendlyneIntel("News and announcements", intelligence.news), cleanTrendlyneIntel("Corporate events", intelligence.events)]
+    .filter(hasMeaningfulText)
+    .join("\n\n");
   return `Bull case: ${record.companyName || company.name} becomes attractive if revenue growth remains ${growthLabel(record.salesGrowth)}, profitability recovers or improves, capital efficiency rises, and the market gains confidence in the durability of earnings.
 
 Evidence to support the upside case:
@@ -686,7 +696,7 @@ Evidence to support the upside case:
 - DVM durability/valuation/momentum: ${metric(record.dvmDurability)} / ${metric(record.dvmValuation)} / ${metric(record.dvmMomentum)}.
 
 Catalyst watch:
-${compactText([intelligence.news, intelligence.events].filter(hasMeaningfulText).join("\n\n"), 380) || "Track quarterly results, management commentary, order wins, margin recovery and institutional ownership changes."}`;
+${compactText(catalystText, 380) || "Track quarterly results, management commentary, order wins, margin recovery and institutional ownership changes."}`;
 }
 
 function buildBearThesis(record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
@@ -718,6 +728,7 @@ function buildKeyAssumptions(record: FundamentalsRecord) {
 }
 
 function buildThesisKillers(record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  const sastText = cleanTrendlyneIntel("Insider / SAST", intelligence.sast);
   return `Thesis killers:
 - Two or more quarters of revenue slowdown without a clear temporary reason.
 - Profit growth remains negative while valuation stays elevated.
@@ -725,7 +736,7 @@ function buildThesisKillers(record: FundamentalsRecord, intelligence: TrendlyneI
 - Operating cash flow fails to track reported profits.
 - Promoter pledge, large insider selling, adverse SAST activity, auditor concerns or governance red flags appear.
 - DVM durability/momentum weakens materially.
-- Primary filings contradict the Trendlyne/NSE data used in this draft.${hasMeaningfulText(intelligence.sast) ? `\n\nOwnership/SAST evidence to monitor:\n${compactText(intelligence.sast, 260)}` : ""}`;
+- Primary filings contradict the Trendlyne/NSE data used in this draft.${hasMeaningfulText(sastText) ? `\n\nOwnership/SAST evidence to monitor:\n${compactText(sastText, 260)}` : ""}`;
 }
 
 function buildAnalystPrompt(company: Company) {
@@ -761,6 +772,157 @@ function buildResearchReview(record: FundamentalsRecord, intelligence: Trendlyne
     verdict: "Unchanged",
     notes: `Trendlyne/NSE sync created a first-pass research draft. Verify annual report, latest quarterly results, concall commentary, cash flow and governance before changing position size.`
   };
+}
+
+function extractSummaryHoldings(text: string) {
+  const matches = Array.from(text.matchAll(/\["([^"]+)",\s*(-?\d+(?:\.\d+)?)/g));
+  return matches
+    .filter((match) => !["Type", "Quarter"].includes(match[1]))
+    .slice(0, 8)
+    .map((match) => `${match[1]}: ${formatNumber(match[2])}%`);
+}
+
+function extractChartTrend(text: string, label: string) {
+  const section = new RegExp(`${label}:([\\s\\S]*?)(?:\\n\\s{2}[A-Z][A-Za-z /]+:|\\n[a-zA-Z]+:|$)`, "i").exec(text)?.[1] || "";
+  const rows = Array.from(section.matchAll(/\["([^"]+)",\s*(-?\d+(?:\.\d+)?)/g)).map((match) => ({
+    quarter: match[1],
+    value: Number(match[2])
+  }));
+  if (rows.length < 2) return "";
+  const first = rows[0];
+  const latest = rows[rows.length - 1];
+  const change = latest.value - first.value;
+  const direction = change > 0.05 ? "increased" : change < -0.05 ? "decreased" : "remained broadly stable";
+  return `${label}: ${latest.value}% in ${latest.quarter}, ${direction} from ${first.value}% in ${first.quarter}.`;
+}
+
+function extractStockIdentity(text: string) {
+  const csv = /stockData:\s*\n\s{2}([^\n]+,\s*[A-Z0-9-]+,\s*\d+,[^\n]+)/i.exec(text)?.[1];
+  if (csv) {
+    const parts = csv.split(",").map((part) => part.trim());
+    return {
+      name: parts[0] || "",
+      ticker: parts[1] || "",
+      durability: parts[6] || "",
+      valuation: parts[7] || "",
+      momentum: parts[8] || ""
+    };
+  }
+  const name = /get_full_name:\s*([^\n]+)/i.exec(text)?.[1]?.trim() || "";
+  const ticker = /NSEcode:\s*([^\n]+)/i.exec(text)?.[1]?.trim() || "";
+  return {
+    name,
+    ticker,
+    durability: /d_value:\s*([-\d.]+)/i.exec(text)?.[1] || "",
+    valuation: /v_value:\s*([-\d.]+)/i.exec(text)?.[1] || "",
+    momentum: /m_value:\s*([-\d.]+)/i.exec(text)?.[1] || ""
+  };
+}
+
+function extractTechnicalRows(text: string) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.includes("|") && !/^name\s*\|/i.test(line))
+    .map((line) => line.split("|").map((part) => part.trim()))
+    .filter((parts) => parts.length >= 5 && parts[0] && parts[0] !== "None")
+    .slice(0, 8)
+    .map((parts) => `${parts[0]}: ${parts[1]} - ${parts[3] && parts[3] !== "None" ? parts[3] : parts[4]}`);
+}
+
+function extractPricePerformance(text: string) {
+  const labels = ["day", "week", "month", "sixMonth", "oneYear", "twoYear", "threeYear"];
+  return labels
+    .map((label) => {
+      const section = new RegExp(`${label}:([\\s\\S]*?)(?:\\n\\s{2}[a-zA-Z]+:|$)`).exec(text)?.[1] || "";
+      const name = /name:\s*([^\n]+)/i.exec(section)?.[1]?.trim();
+      const change = /changePercentSafe:\s*(-?\d+(?:\.\d+)?)/i.exec(section)?.[1] || /changePercent:\s*(-?\d+(?:\.\d+)?)/i.exec(section)?.[1];
+      if (!name || !change) return "";
+      return `${name}: ${formatNumber(change)}%`;
+    })
+    .filter(Boolean);
+}
+
+function extractNewsRows(text: string) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[A-Z0-9-]+\s*\|/.test(line) && !/^NSEcode\s*\|/i.test(line))
+    .slice(0, 5)
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+      const date = parts[15] ? parts[15].slice(0, 10) : "";
+      const title = parts[16] || parts[9] || parts[0];
+      const description = parts[17] || "";
+      return `${date ? `${date}: ` : ""}${title}${description && description !== title ? ` - ${description}` : ""}`;
+    });
+}
+
+function extractTableRows(text: string, maxRows = 5) {
+  return Array.from(text.matchAll(/\[([^\[\]\n]+)\]/g))
+    .map((match) => match[1].split(",").map((part) => part.replace(/^"|"$/g, "").trim()))
+    .filter((parts) => parts.length >= 4 && !parts[0].includes("Quarter") && !parts[0].includes("Type"))
+    .slice(0, maxRows)
+    .map((parts) => parts.filter(Boolean).slice(0, 7).join(" | "));
+}
+
+function cleanTrendlyneIntel(title: string, value: string) {
+  if (!hasMeaningfulText(value)) return "No useful Trendlyne data returned for this section.";
+  const lowerTitle = title.toLowerCase();
+  const identity = extractStockIdentity(value);
+  const lines: string[] = [];
+
+  if (lowerTitle.includes("overview")) {
+    const holdings = extractSummaryHoldings(value);
+    const technicalRows = extractTechnicalRows(value);
+    if (holdings.length) lines.push("Ownership snapshot:", ...holdings.map((item) => `- ${item}`));
+    if (technicalRows.length) lines.push("", "Key technical signals:", ...technicalRows.map((item) => `- ${item}`));
+  } else if (lowerTitle.includes("technical")) {
+    if (identity.name) lines.push(`${identity.name} (${identity.ticker})`);
+    if (identity.durability || identity.valuation || identity.momentum) {
+      lines.push(`DVM: durability ${metric(identity.durability)}, valuation ${metric(identity.valuation)}, momentum ${metric(identity.momentum)}.`);
+    }
+    const performance = extractPricePerformance(value);
+    const technicalRows = extractTechnicalRows(value);
+    if (performance.length) lines.push("", "Price performance:", ...performance.map((item) => `- ${item}`));
+    if (technicalRows.length) lines.push("", "Signals:", ...technicalRows.map((item) => `- ${item}`));
+  } else if (lowerTitle.includes("news")) {
+    const news = extractNewsRows(value);
+    if (news.length) lines.push("Latest items:", ...news.map((item) => `- ${item}`));
+  } else if (lowerTitle.includes("corporate")) {
+    if (identity.name) lines.push(`${identity.name} (${identity.ticker})`);
+    if (identity.durability || identity.valuation || identity.momentum) {
+      lines.push(`DVM: durability ${metric(identity.durability)}, valuation ${metric(identity.valuation)}, momentum ${metric(identity.momentum)}.`);
+    }
+    const insights = value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.includes("|") && !/^(stockHeaders|tableData|tableHeaders|stockData):/i.test(line))
+      .filter((line) => /bonus|dividend|split|board|result|meeting|insight/i.test(line))
+      .slice(0, 6);
+    if (insights.length) lines.push("", "Events and insights:", ...insights.map((item) => `- ${item}`));
+  } else if (lowerTitle.includes("ownership")) {
+    const holdings = extractSummaryHoldings(value);
+    const trends = ["Promoter", "Institutional", "FII", "MF", "DII", "Public"].map((label) => extractChartTrend(value, label)).filter(Boolean);
+    if (holdings.length) lines.push("Latest holding:", ...holdings.map((item) => `- ${item}`));
+    if (trends.length) lines.push("", "Trend:", ...trends.map((item) => `- ${item}`));
+  } else if (lowerTitle.includes("insider") || lowerTitle.includes("bulk")) {
+    const rows = extractTableRows(value);
+    if (/isCurtail:\s*True/i.test(value)) lines.push("Trendlyne returned a curtailed list; review the source for the complete table.");
+    if (rows.length) lines.push("Recent transactions:", ...rows.map((item) => `- ${item}`));
+  } else if (lowerTitle.includes("document")) {
+    lines.push(...value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 10));
+  }
+
+  const clean = lines.join("\n").trim();
+  if (clean) return clean;
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.includes(" | ") && !/headers?:|tableData:|stockData:/i.test(line))
+    .slice(0, 18)
+    .join("\n")
+    .trim() || compactText(value, 900);
 }
 
 function mergeDocuments(existing: Company["documents"], additions: Company["documents"]) {
@@ -816,6 +978,15 @@ function mergeReviews(existing: Company["reviews"], additions: Company["reviews"
 }
 
 function trendlyneResearchBrief(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  const cleanOverview = cleanTrendlyneIntel("Overview and DVM", intelligence.overview);
+  const cleanTechnical = cleanTrendlyneIntel("Technicals", intelligence.technical);
+  const cleanNews = cleanTrendlyneIntel("News and announcements", intelligence.news);
+  const cleanEvents = cleanTrendlyneIntel("Corporate events", intelligence.events);
+  const cleanOwnership = cleanTrendlyneIntel("Ownership", intelligence.shareholding);
+  const cleanSast = cleanTrendlyneIntel("Insider / SAST", intelligence.sast);
+  const cleanDeals = cleanTrendlyneIntel("Bulk and block deals", intelligence.bulkBlock);
+  const cleanDocuments = cleanTrendlyneIntel("Document search", intelligence.documents);
+
   return `IMRS Institutional Research Draft - ${record.companyName || company.name}
 
 Source:
@@ -850,23 +1021,26 @@ ${buildBearThesis(record, intelligence)}
 6. Business quality
 ${buildBusinessSummary(company, record, intelligence)}
 
+Source overview:
+${compactText(cleanOverview, 500)}
+
 7. Future prospects and catalysts
 ${buildIndustryOpportunity(company, record, intelligence)}
 
 8. Technical and market sentiment evidence
-${compactText(intelligence.technical)}
+${compactText(cleanTechnical)}
 
 9. Recent news and announcements
-${compactText(intelligence.news)}
+${compactText(cleanNews)}
 
 10. Corporate events
-${compactText(intelligence.events)}
+${compactText(cleanEvents)}
 
 11. Ownership, insider/SAST and deals
-${compactText([intelligence.shareholding, intelligence.sast, intelligence.bulkBlock].filter(Boolean).join("\n\n"))}
+${compactText([cleanOwnership, cleanSast, cleanDeals].filter(Boolean).join("\n\n"))}
 
 12. Document search
-${compactText(intelligence.documents)}
+${compactText(cleanDocuments)}
 
 13. Next diligence
 - Read the latest annual report and auditor notes.
@@ -906,21 +1080,25 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
     { name: "Trendlyne ownership and SAST", type: "Exchange Filing", status: "Key Source" },
     { name: "Trendlyne document search", type: "Other", status: "To Review" }
   ];
+  const cleanNews = cleanTrendlyneIntel("News and announcements", intelligence.news);
+  const cleanEvents = cleanTrendlyneIntel("Corporate events", intelligence.events);
+  const cleanTechnical = cleanTrendlyneIntel("Technicals", intelligence.technical);
+  const cleanSast = cleanTrendlyneIntel("Insider / SAST", intelligence.sast);
   const trendlyneCatalysts: Company["catalysts"] = [];
-  if (hasMeaningfulText(intelligence.news)) {
+  if (hasMeaningfulText(cleanNews)) {
     trendlyneCatalysts.push({
       title: "Trendlyne news and announcements review",
       date: "",
       status: "In Progress",
-      notes: compactText(intelligence.news, 260)
+      notes: compactText(cleanNews, 260)
     });
   }
-  if (hasMeaningfulText(intelligence.events)) {
+  if (hasMeaningfulText(cleanEvents)) {
     trendlyneCatalysts.push({
       title: "Trendlyne corporate events review",
       date: "",
       status: "Expected",
-      notes: compactText(intelligence.events, 260)
+      notes: compactText(cleanEvents, 260)
     });
   }
   const trendlyneRisks: Company["risks"] = [];
@@ -929,7 +1107,7 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
       title: "Trendlyne technical weakness",
       probability: "Medium",
       impact: "Medium",
-      mitigation: compactText(intelligence.technical, 220)
+      mitigation: compactText(cleanTechnical, 220)
     });
   }
   if (/pledge|disposal|sell|sast|insider/i.test(intelligence.sast)) {
@@ -937,7 +1115,7 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
       title: "Trendlyne insider/SAST watch",
       probability: "Medium",
       impact: "High",
-      mitigation: compactText(intelligence.sast, 220)
+      mitigation: compactText(cleanSast, 220)
     });
   }
   if (Number(record.profitGrowth) < 0) {
@@ -3309,10 +3487,11 @@ function TextCard({ title, value, onChange }: { title: string; value: string; on
 }
 
 function IntelCard({ title, value }: { title: string; value: string }) {
+  const cleanValue = cleanTrendlyneIntel(title, value);
   return (
     <article className="intel-card">
       <h3>{title}</h3>
-      <pre>{value || "No Trendlyne data returned for this section."}</pre>
+      <pre>{cleanValue}</pre>
     </article>
   );
 }
