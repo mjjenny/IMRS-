@@ -100,6 +100,7 @@ type AppData = {
   companies: Company[];
   portfolio: PortfolioPosition[];
   fundamentals: Record<string, FundamentalsRecord>;
+  shareholding: Record<string, ShareholdingRecord>;
 };
 
 type FundamentalsRecord = {
@@ -122,6 +123,28 @@ type FundamentalsRecord = {
   opm: string;
   cfo: string;
   currentPrice: string;
+};
+
+type ShareholdingRecord = {
+  id: string;
+  companyName: string;
+  ticker: string;
+  source: string;
+  importedAt: string;
+  asOnDate: string;
+  submissionDate: string;
+  promoterHolding: string;
+  publicHolding: string;
+  employeeTrusts: string;
+  xbrlUrl: string;
+  history: Array<{
+    asOnDate: string;
+    promoterHolding: string;
+    publicHolding: string;
+    employeeTrusts: string;
+    submissionDate: string;
+    xbrlUrl: string;
+  }>;
 };
 
 type KiteStatus = {
@@ -618,9 +641,89 @@ function extractScreenerWorkbook(buffer: ArrayBuffer, fallbackTicker = ""): Fund
   };
 }
 
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+function extractNseShareholdingCsv(text: string, fallbackTicker = ""): ShareholdingRecord {
+  const rows = parseCsv(text);
+  const headers = rows[0] || [];
+  const dataRows = rows.slice(1).filter((row) => row.length > 1);
+  if (!headers.length || !dataRows.length) throw new Error("NSE shareholding CSV appears to be empty.");
+
+  const indexOf = (name: string) => headers.findIndex((header) => normalizeKey(header) === normalizeKey(name));
+  const companyIndex = indexOf("COMPANY");
+  const promoterIndex = indexOf("PROMOTER & PROMOTER GROUP (A)");
+  const publicIndex = indexOf("PUBLIC (B)");
+  const trustIndex = indexOf("SHARES HELD BY EMPLOYEE TRUSTS (C2)");
+  const asOnIndex = indexOf("AS ON DATE");
+  const submissionIndex = indexOf("SUBMISSION DATE");
+  const actionIndex = indexOf("ACTION");
+
+  if (companyIndex === -1 || promoterIndex === -1 || publicIndex === -1 || asOnIndex === -1) {
+    throw new Error("This does not look like an NSE shareholding pattern CSV.");
+  }
+
+  const history = dataRows.map((row) => ({
+    asOnDate: row[asOnIndex] || "",
+    promoterHolding: row[promoterIndex] || "",
+    publicHolding: row[publicIndex] || "",
+    employeeTrusts: trustIndex >= 0 ? row[trustIndex] || "" : "",
+    submissionDate: submissionIndex >= 0 ? row[submissionIndex] || "" : "",
+    xbrlUrl: actionIndex >= 0 ? row[actionIndex] || "" : ""
+  }));
+  const latest = history[0];
+  const companyName = dataRows[0][companyIndex] || "";
+
+  return {
+    id: uid(),
+    companyName,
+    ticker: fallbackTicker.toUpperCase(),
+    source: "NSE shareholding CSV",
+    importedAt: new Date().toISOString(),
+    asOnDate: latest.asOnDate,
+    submissionDate: latest.submissionDate,
+    promoterHolding: latest.promoterHolding,
+    publicHolding: latest.publicHolding,
+    employeeTrusts: latest.employeeTrusts,
+    xbrlUrl: latest.xbrlUrl,
+    history
+  };
+}
+
 export default function Home() {
   const [hydrated, setHydrated] = useState(false);
-  const [data, setData] = useState<AppData>({ companies: [demoCompany()], portfolio: [], fundamentals: {} });
+  const [data, setData] = useState<AppData>({ companies: [demoCompany()], portfolio: [], fundamentals: {}, shareholding: {} });
   const [activePage, setActivePage] = useState<PageId>("dashboard");
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [selectedId, setSelectedId] = useState("");
@@ -638,16 +741,21 @@ export default function Home() {
       if (stored) {
         const parsed = JSON.parse(stored) as Partial<AppData>;
         const companies = (parsed.companies || []).map(normalizeCompany);
-        setData({ companies: companies.length ? companies : [demoCompany()], portfolio: parsed.portfolio || [], fundamentals: parsed.fundamentals || {} });
+        setData({
+          companies: companies.length ? companies : [demoCompany()],
+          portfolio: parsed.portfolio || [],
+          fundamentals: parsed.fundamentals || {},
+          shareholding: parsed.shareholding || {}
+        });
         setSelectedId(companies[0]?.id || "");
       } else {
         const sample = demoCompany();
-        setData({ companies: [sample], portfolio: [], fundamentals: {} });
+        setData({ companies: [sample], portfolio: [], fundamentals: {}, shareholding: {} });
         setSelectedId(sample.id);
       }
     } catch {
       const sample = demoCompany();
-      setData({ companies: [sample], portfolio: [], fundamentals: {} });
+      setData({ companies: [sample], portfolio: [], fundamentals: {}, shareholding: {} });
       setSelectedId(sample.id);
     } finally {
       setHydrated(true);
@@ -723,6 +831,18 @@ export default function Home() {
     );
   }
 
+  function findShareholding(ticker: string, companyName: string, source = data.shareholding) {
+    const normalizedTicker = ticker.toUpperCase();
+    const normalizedName = normalizeKey(companyName);
+    return (
+      Object.values(source).find((record) => record.ticker && record.ticker.toUpperCase() === normalizedTicker) ||
+      Object.values(source).find((record) => {
+        const recordName = normalizeKey(record.companyName);
+        return recordName.includes(normalizedName) || normalizedName.includes(recordName);
+      })
+    );
+  }
+
   function applyFundamentals(company: Company, record?: FundamentalsRecord) {
     if (!record) return company;
     const priceForPe = asNumber(company.financials.currentPrice) || asNumber(record.currentPrice);
@@ -746,6 +866,19 @@ export default function Home() {
         opm: record.opm || company.financials.opm,
         cfo: record.cfo || company.financials.cfo,
         currentPrice: company.financials.currentPrice || record.currentPrice
+      }
+    };
+  }
+
+  function applyShareholding(company: Company, record?: ShareholdingRecord) {
+    if (!record) return company;
+
+    return {
+      ...company,
+      dataSource: `${company.dataSource || "Company search"} + ${record.source} (${record.asOnDate || record.importedAt.slice(0, 10)})`,
+      financials: {
+        ...company.financials,
+        promoterHolding: record.promoterHolding || company.financials.promoterHolding
       }
     };
   }
@@ -788,7 +921,10 @@ export default function Home() {
         profitGrowth: item.profitGrowth
       }
     };
-    const enrichedCompany = applyFundamentals(company, findFundamentals(item.ticker, item.name));
+    const enrichedCompany = applyShareholding(
+      applyFundamentals(company, findFundamentals(item.ticker, item.name)),
+      findShareholding(item.ticker, item.name)
+    );
 
     setData((current) => ({ ...current, companies: [enrichedCompany, ...current.companies] }));
     setSelectedId(enrichedCompany.id);
@@ -824,7 +960,7 @@ export default function Home() {
         const parsed = JSON.parse(String(reader.result)) as Partial<AppData>;
         if (!parsed.companies) throw new Error("Missing companies");
         const companies = parsed.companies.map(normalizeCompany);
-        setData({ companies, portfolio: parsed.portfolio || [], fundamentals: parsed.fundamentals || {} });
+        setData({ companies, portfolio: parsed.portfolio || [], fundamentals: parsed.fundamentals || {}, shareholding: parsed.shareholding || {} });
         setSelectedId(companies[0]?.id || "");
         setActivePage("dashboard");
       } catch {
@@ -867,6 +1003,43 @@ export default function Home() {
       window.alert(`Imported fundamentals for ${record.companyName}.`);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not import this Screener workbook.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function importShareholding(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const extracted = extractNseShareholdingCsv(await file.text());
+      const nameMatch = data.companies.find((company) => {
+        const recordName = normalizeKey(extracted.companyName);
+        const companyName = normalizeKey(company.name);
+        return recordName.includes(companyName) || companyName.includes(recordName);
+      });
+      const record = { ...extracted, ticker: nameMatch?.ticker || extracted.ticker };
+      const key = record.ticker || normalizeKey(record.companyName);
+      const nextShareholding = { ...data.shareholding, [key]: record };
+      const matchedCompany = data.companies.find((company) => findShareholding(company.ticker, company.name, nextShareholding));
+
+      setData((current) => ({
+        ...current,
+        shareholding: nextShareholding,
+        companies: current.companies.map((company) => {
+          const match = findShareholding(company.ticker, company.name, nextShareholding);
+          return match ? applyShareholding(company, match) : company;
+        })
+      }));
+
+      if (matchedCompany) {
+        setSelectedId(matchedCompany.id);
+      }
+      setActivePage("fundamentals");
+      window.alert(`Imported NSE shareholding for ${record.companyName}.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not import this NSE shareholding CSV.");
     } finally {
       event.target.value = "";
     }
@@ -1276,11 +1449,12 @@ Verify all figures, review primary documents, test thesis killers and complete v
 
   function renderFundamentals() {
     const records = Object.values(data.fundamentals).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+    const shareholdingRecords = Object.values(data.shareholding).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
 
     return (
       <>
-        <PageHead eyebrow="Screener data" title="Fundamentals Import">
-          Upload Screener Excel exports once, then IMRS auto-fills fundamentals when matching companies are imported.
+        <PageHead eyebrow="Source-backed data" title="Fundamentals Import">
+          Upload Screener Excel exports and NSE shareholding CSV files once, then IMRS auto-fills matching companies.
         </PageHead>
         <section className="panel">
           <div className="section-head">
@@ -1298,6 +1472,23 @@ Verify all figures, review primary documents, test thesis killers and complete v
             market cap, revenue, profit, EPS, P/E, ROE, ROCE, debt/equity, growth, OPM and cash flow.
           </div>
           <div className="note">Promoter holding is not present in this Screener workbook format, so it remains manual for now.</div>
+        </section>
+        <section className="panel" style={{ marginTop: 14 }}>
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Exchange filing</span>
+              <h2>NSE Shareholding CSV</h2>
+            </div>
+            <label className="file-button">
+              <Upload size={17} /> Upload CSV
+              <input type="file" accept=".csv" onChange={importShareholding} />
+            </label>
+          </div>
+          <div className="info">
+            Upload the NSE shareholding pattern CSV from Corporate Filings. IMRS reads promoter holding, public holding, employee trust
+            holding, filing dates and the XBRL source link.
+          </div>
+          <div className="note">This fills the Promoter holding % field from the latest row in the NSE filing.</div>
         </section>
         <section className="panel" style={{ marginTop: 14 }}>
           <div className="section-head">
@@ -1337,6 +1528,52 @@ Verify all figures, review primary documents, test thesis killers and complete v
               </tbody>
             </table>
             {records.length === 0 ? <p>No Screener exports imported yet.</p> : null}
+          </div>
+        </section>
+        <section className="panel" style={{ marginTop: 14 }}>
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Saved ownership filings</span>
+              <h2>{shareholdingRecords.length} records</h2>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  <th>As on date</th>
+                  <th>Promoter</th>
+                  <th>Public</th>
+                  <th>Employee trusts</th>
+                  <th>Filing</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shareholdingRecords.map((record) => (
+                  <tr key={record.id}>
+                    <td>
+                      <strong>{record.companyName}</strong>
+                      <small>{record.ticker || "Matched by name"}</small>
+                    </td>
+                    <td>{record.asOnDate || "-"}</td>
+                    <td>{record.promoterHolding ? `${record.promoterHolding}%` : "-"}</td>
+                    <td>{record.publicHolding ? `${record.publicHolding}%` : "-"}</td>
+                    <td>{record.employeeTrusts ? `${record.employeeTrusts}%` : "-"}</td>
+                    <td>
+                      {record.xbrlUrl ? (
+                        <a href={record.xbrlUrl} target="_blank" rel="noreferrer">
+                          XBRL
+                        </a>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {shareholdingRecords.length === 0 ? <p>No NSE shareholding CSV files imported yet.</p> : null}
           </div>
         </section>
       </>

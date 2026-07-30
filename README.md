@@ -62,6 +62,22 @@ Market cap, revenue, profit, EPS, P/E, ROE, ROCE, debt/equity, sales growth, pro
 
 Promoter holding is not present in the tested Screener company workbook, so it remains manual.
 
+## NSE Shareholding Pattern
+
+Use the Fundamentals page to upload NSE shareholding pattern CSV files from:
+
+```text
+NSE > Corporate Filings > Shareholding Pattern > Download CSV
+```
+
+The importer currently fills:
+
+```text
+Promoter holding %, public holding %, employee trust holding %, as-on date, submission date, XBRL source link
+```
+
+This is the preferred source for promoter holding because it comes from the exchange filing rather than the Screener workbook.
+
 The old single-file version is preserved at:
 
 ```text
