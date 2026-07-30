@@ -2566,6 +2566,17 @@ function normalizeKey(value: string) {
     .trim();
 }
 
+function externalLookupTicker(value: string) {
+  return value
+    .toUpperCase()
+    .trim()
+    .replace(/-(BE|EQ)$/i, "");
+}
+
+function tickersMatch(left: string, right: string) {
+  return externalLookupTicker(left) === externalLookupTicker(right);
+}
+
 function formatNumber(value: number | string | null | undefined, decimals = 2) {
   const numberValue = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numberValue)) return "";
@@ -3092,10 +3103,9 @@ export default function Home() {
   }
 
   function findFundamentals(ticker: string, companyName: string, source = data.fundamentals) {
-    const normalizedTicker = ticker.toUpperCase();
     const normalizedName = normalizeKey(companyName);
     return (
-      Object.values(source).find((record) => record.ticker && record.ticker.toUpperCase() === normalizedTicker) ||
+      Object.values(source).find((record) => record.ticker && tickersMatch(record.ticker, ticker)) ||
       Object.values(source).find((record) => {
         const recordName = normalizeKey(record.companyName);
         return recordName.includes(normalizedName) || normalizedName.includes(recordName);
@@ -3104,10 +3114,9 @@ export default function Home() {
   }
 
   function findShareholding(ticker: string, companyName: string, source = data.shareholding) {
-    const normalizedTicker = ticker.toUpperCase();
     const normalizedName = normalizeKey(companyName);
     return (
-      Object.values(source).find((record) => record.ticker && record.ticker.toUpperCase() === normalizedTicker) ||
+      Object.values(source).find((record) => record.ticker && tickersMatch(record.ticker, ticker)) ||
       Object.values(source).find((record) => {
         const recordName = normalizeKey(record.companyName);
         return recordName.includes(normalizedName) || normalizedName.includes(recordName);
@@ -3116,10 +3125,9 @@ export default function Home() {
   }
 
   function findTrendlyneIntelligence(ticker: string, companyName: string, source = data.trendlyne) {
-    const normalizedTicker = ticker.toUpperCase();
     const normalizedName = normalizeKey(companyName);
     return (
-      Object.values(source).find((record) => record.ticker && record.ticker.toUpperCase() === normalizedTicker) ||
+      Object.values(source).find((record) => record.ticker && tickersMatch(record.ticker, ticker)) ||
       Object.values(source).find((record) => {
         const recordName = normalizeKey(record.companyName);
         return recordName.includes(normalizedName) || normalizedName.includes(recordName);
@@ -3229,13 +3237,14 @@ export default function Home() {
 
     setSyncingSymbol(company.ticker);
     try {
-      const record = await fetchNseShareholding(company.ticker);
+      const lookupSymbol = externalLookupTicker(company.ticker);
+      const record = await fetchNseShareholding(lookupSymbol);
       const key = record.ticker || company.ticker;
       setData((current) => ({
         ...current,
         shareholding: { ...current.shareholding, [key]: record },
         companies: current.companies.map((item) => {
-          const matchesTicker = item.ticker.toUpperCase() === company.ticker.toUpperCase();
+          const matchesTicker = tickersMatch(item.ticker, company.ticker);
           const matchesName = normalizeKey(record.companyName).includes(normalizeKey(item.name));
           return matchesTicker || matchesName ? applyShareholding(item, record) : item;
         })
@@ -3257,13 +3266,14 @@ export default function Home() {
 
     setSyncingSymbol(company.ticker);
     try {
-      const record = await fetchNseFinancials(company.ticker);
+      const lookupSymbol = externalLookupTicker(company.ticker);
+      const record = await fetchNseFinancials(lookupSymbol);
       const key = record.ticker || company.ticker;
       setData((current) => ({
         ...current,
         fundamentals: { ...current.fundamentals, [key]: record },
         companies: current.companies.map((item) => {
-          const matchesTicker = item.ticker.toUpperCase() === company.ticker.toUpperCase();
+          const matchesTicker = tickersMatch(item.ticker, company.ticker);
           const matchesName = normalizeKey(record.companyName).includes(normalizeKey(item.name));
           return matchesTicker || matchesName ? applyFundamentals(item, record) : item;
         })
@@ -3304,9 +3314,10 @@ export default function Home() {
 
     setSyncingSymbol(company.ticker);
     try {
+      const lookupSymbol = externalLookupTicker(company.ticker);
       const [record, intelligence] = await Promise.all([
-        fetchTrendlyneCompany(company.ticker),
-        fetchTrendlyneIntelligence(company.ticker).catch(() => undefined)
+        fetchTrendlyneCompany(lookupSymbol),
+        fetchTrendlyneIntelligence(lookupSymbol).catch(() => undefined)
       ]);
       const key = record.ticker || company.ticker;
       const intelligenceKey = intelligence?.ticker || key;
@@ -3315,7 +3326,7 @@ export default function Home() {
         fundamentals: { ...current.fundamentals, [key]: record },
         trendlyne: intelligence ? { ...current.trendlyne, [intelligenceKey]: intelligence } : current.trendlyne,
         companies: current.companies.map((item) => {
-          const matchesTicker = item.ticker.toUpperCase() === company.ticker.toUpperCase();
+          const matchesTicker = tickersMatch(item.ticker, company.ticker);
           const matchesName = normalizeKey(record.companyName).includes(normalizeKey(item.name));
           if (!matchesTicker && !matchesName) return item;
           const withFundamentals = applyFundamentals(item, record);
@@ -3342,7 +3353,7 @@ export default function Home() {
   }
 
   async function importStarterCompany(item: CompanySearchResult) {
-    const existing = data.companies.find((company) => company.ticker.toUpperCase() === item.ticker);
+    const existing = data.companies.find((company) => tickersMatch(company.ticker, item.ticker));
     if (existing) {
       setSelectedId(existing.id);
       setActivePage("research");
@@ -3382,9 +3393,10 @@ export default function Home() {
     setSyncingSymbol(item.ticker);
     try {
       if (item.exchange === "NSE" || item.source?.includes("Kite")) {
+        const lookupSymbol = externalLookupTicker(item.ticker);
         [fetchedShareholding, fetchedFinancials] = await Promise.all([
-          fetchNseShareholding(item.ticker).catch(() => undefined),
-          fetchNseFinancials(item.ticker).catch(() => undefined)
+          fetchNseShareholding(lookupSymbol).catch(() => undefined),
+          fetchNseFinancials(lookupSymbol).catch(() => undefined)
         ]);
       }
     } catch {
@@ -3567,7 +3579,7 @@ export default function Home() {
         : extractWorkbookRows(await file.arrayBuffer());
       const extracted = extractTrendlyneRows(rows, selected?.ticker || "", selected?.name || "");
       const nameMatch = data.companies.find((company) => {
-        const tickerMatch = extracted.ticker && company.ticker.toUpperCase() === extracted.ticker.toUpperCase();
+        const tickerMatch = extracted.ticker && tickersMatch(company.ticker, extracted.ticker);
         const recordName = normalizeKey(extracted.companyName);
         const companyName = normalizeKey(company.name);
         return tickerMatch || recordName.includes(companyName) || companyName.includes(recordName);
