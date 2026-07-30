@@ -3364,16 +3364,6 @@ export default function Home() {
     setActivePage("dashboard");
   }
 
-  function exportData() {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `imrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
   function downloadJson(filename: string, payload: unknown) {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -3477,32 +3467,6 @@ export default function Home() {
     } finally {
       setReportFetching(false);
     }
-  }
-
-  function importData(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result)) as Partial<AppData>;
-        if (!parsed.companies) throw new Error("Missing companies");
-        const companies = parsed.companies.map(normalizeCompany);
-        setData({
-          companies,
-          portfolio: parsed.portfolio || [],
-          fundamentals: parsed.fundamentals || {},
-          shareholding: parsed.shareholding || {},
-          trendlyne: parsed.trendlyne || {}
-        });
-        setSelectedId(companies[0]?.id || "");
-        setActivePage("dashboard");
-      } catch {
-        window.alert("Invalid IMRS backup");
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = "";
   }
 
   async function importFundamentals(event: ChangeEvent<HTMLInputElement>) {
@@ -4308,13 +4272,6 @@ export default function Home() {
           </div>
         </div>
         <div className="top-actions">
-          <button className="secondary" onClick={exportData} title="Export backup">
-            <Download size={17} /> Export
-          </button>
-          <label className="secondary file-button">
-            <Upload size={17} /> Import
-            <input type="file" accept=".json" onChange={importData} />
-          </label>
           <button onClick={createCompany} title="Create company">
             <Plus size={17} /> Company
           </button>
