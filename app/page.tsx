@@ -14,6 +14,7 @@ import {
   Upload,
   Users
 } from "lucide-react";
+import { strFromU8, unzipSync } from "fflate";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
 const STORAGE_KEY = "imrs_enterprise_v2";
@@ -98,6 +99,29 @@ type PortfolioPosition = {
 type AppData = {
   companies: Company[];
   portfolio: PortfolioPosition[];
+  fundamentals: Record<string, FundamentalsRecord>;
+};
+
+type FundamentalsRecord = {
+  id: string;
+  companyName: string;
+  ticker: string;
+  source: string;
+  importedAt: string;
+  reportDate: string;
+  marketCap: string;
+  revenue: string;
+  profit: string;
+  eps: string;
+  pe: string;
+  roe: string;
+  roce: string;
+  debtEquity: string;
+  salesGrowth: string;
+  profitGrowth: string;
+  opm: string;
+  cfo: string;
+  currentPrice: string;
 };
 
 type KiteStatus = {
@@ -124,7 +148,7 @@ type CompanySearchResult = {
   source?: string;
 };
 
-type PageId = "dashboard" | "search" | "screener" | "watchlist" | "portfolio" | "committee" | "research" | "kite";
+type PageId = "dashboard" | "search" | "screener" | "watchlist" | "portfolio" | "committee" | "research" | "kite" | "fundamentals";
 type TabId =
   | "overview"
   | "financials"
@@ -451,9 +475,152 @@ function asNumber(value: string) {
   return Number(value) || 0;
 }
 
+function normalizeKey(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\blimited\b|\bltd\b|\bindia\b|[^a-z0-9]/g, "")
+    .trim();
+}
+
+function formatNumber(value: number | string | null | undefined, decimals = 2) {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numberValue)) return "";
+  const fixed = numberValue.toFixed(decimals);
+  return fixed.replace(/\.?0+$/, "");
+}
+
+function excelDate(value: number | string | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+  return date.toISOString().slice(0, 10);
+}
+
+function parseXml(text: string) {
+  return new DOMParser().parseFromString(text, "application/xml");
+}
+
+function parseSharedStrings(xml: string) {
+  const doc = parseXml(xml);
+  return Array.from(doc.getElementsByTagName("si")).map((item) =>
+    Array.from(item.getElementsByTagName("t"))
+      .map((node) => node.textContent || "")
+      .join("")
+  );
+}
+
+function parseSheet(xml: string, sharedStrings: string[]) {
+  const doc = parseXml(xml);
+  const cells = new Map<string, string | number>();
+
+  Array.from(doc.getElementsByTagName("c")).forEach((cell) => {
+    const ref = cell.getAttribute("r");
+    if (!ref) return;
+    const type = cell.getAttribute("t");
+    const valueNode = cell.getElementsByTagName("v")[0];
+    const inlineNode = cell.getElementsByTagName("t")[0];
+    const raw = valueNode?.textContent || inlineNode?.textContent || "";
+
+    if (type === "s") {
+      cells.set(ref, sharedStrings[Number(raw)] || "");
+    } else if (type === "inlineStr" || type === "str") {
+      cells.set(ref, raw);
+    } else if (raw !== "") {
+      const numeric = Number(raw);
+      cells.set(ref, Number.isFinite(numeric) ? numeric : raw);
+    }
+  });
+
+  return cells;
+}
+
+function getCell(cells: Map<string, string | number>, row: number, col: number) {
+  let name = "";
+  let n = col;
+  while (n > 0) {
+    const remainder = (n - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    n = Math.floor((n - 1) / 26);
+  }
+  return cells.get(`${name}${row}`);
+}
+
+function findDataSheetPath(files: Record<string, Uint8Array>) {
+  const workbook = parseXml(strFromU8(files["xl/workbook.xml"]));
+  const rels = parseXml(strFromU8(files["xl/_rels/workbook.xml.rels"]));
+  const sheets = Array.from(workbook.getElementsByTagName("sheet"));
+  const dataSheet = sheets.find((sheet) => sheet.getAttribute("name") === "Data Sheet");
+  const relId = dataSheet?.getAttribute("r:id");
+  if (!relId) throw new Error("Screener Data Sheet not found.");
+
+  const rel = Array.from(rels.getElementsByTagName("Relationship")).find((item) => item.getAttribute("Id") === relId);
+  const target = rel?.getAttribute("Target");
+  if (!target) throw new Error("Screener Data Sheet target not found.");
+
+  return `xl/${target.replace(/^\/?xl\//, "")}`;
+}
+
+function extractScreenerWorkbook(buffer: ArrayBuffer, fallbackTicker = ""): FundamentalsRecord {
+  const files = unzipSync(new Uint8Array(buffer));
+  const sharedStrings = files["xl/sharedStrings.xml"] ? parseSharedStrings(strFromU8(files["xl/sharedStrings.xml"])) : [];
+  const dataSheetPath = findDataSheetPath(files);
+  const cells = parseSheet(strFromU8(files[dataSheetPath]), sharedStrings);
+  const latestCol = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2].find((col) => getCell(cells, 16, col)) || 11;
+  const priorCol = Math.max(2, latestCol - 1);
+  const currentPrice = Number(getCell(cells, 8, 2)) || 0;
+  const marketCap = Number(getCell(cells, 9, 2)) || 0;
+  const sales = Number(getCell(cells, 17, latestCol)) || 0;
+  const priorSales = Number(getCell(cells, 17, priorCol)) || 0;
+  const profit = Number(getCell(cells, 30, latestCol)) || 0;
+  const priorProfit = Number(getCell(cells, 30, priorCol)) || 0;
+  const shares = Number(getCell(cells, 93, latestCol)) || (currentPrice ? marketCap / currentPrice : 0);
+  const eps = shares ? profit / shares : 0;
+  const rawMaterial = Number(getCell(cells, 18, latestCol)) || 0;
+  const inventoryChange = Number(getCell(cells, 19, latestCol)) || 0;
+  const operatingExpenses =
+    rawMaterial +
+    (Number(getCell(cells, 20, latestCol)) || 0) +
+    (Number(getCell(cells, 21, latestCol)) || 0) +
+    (Number(getCell(cells, 22, latestCol)) || 0) +
+    (Number(getCell(cells, 23, latestCol)) || 0) +
+    (Number(getCell(cells, 24, latestCol)) || 0) -
+    inventoryChange;
+  const operatingProfit = sales - operatingExpenses;
+  const equity = (Number(getCell(cells, 57, latestCol)) || 0) + (Number(getCell(cells, 58, latestCol)) || 0);
+  const borrowings = Number(getCell(cells, 59, latestCol)) || 0;
+  const prevCapital =
+    (Number(getCell(cells, 57, priorCol)) || 0) + (Number(getCell(cells, 58, priorCol)) || 0) + (Number(getCell(cells, 59, priorCol)) || 0);
+  const currentCapital = equity + borrowings;
+  const pbt = Number(getCell(cells, 28, latestCol)) || 0;
+  const interest = Number(getCell(cells, 27, latestCol)) || 0;
+  const reportRaw = getCell(cells, 16, latestCol);
+  const companyName = String(getCell(cells, 1, 2) || "").trim();
+
+  return {
+    id: uid(),
+    companyName,
+    ticker: fallbackTicker.toUpperCase(),
+    source: "Screener Excel export",
+    importedAt: new Date().toISOString(),
+    reportDate: typeof reportRaw === "number" ? excelDate(reportRaw) : String(reportRaw || ""),
+    marketCap: formatNumber(marketCap),
+    revenue: formatNumber(sales, 0),
+    profit: formatNumber(profit, 0),
+    eps: formatNumber(eps),
+    pe: eps && currentPrice ? formatNumber(currentPrice / eps) : "",
+    roe: equity ? formatNumber((profit / equity) * 100) : "",
+    roce: prevCapital + currentCapital ? formatNumber(((pbt + interest) * 2 * 100) / (prevCapital + currentCapital)) : "",
+    debtEquity: equity ? formatNumber(borrowings / equity) : "",
+    salesGrowth: priorSales ? formatNumber(((sales / priorSales) - 1) * 100) : "",
+    profitGrowth: priorProfit ? formatNumber(((profit / priorProfit) - 1) * 100) : "",
+    opm: sales ? formatNumber((operatingProfit / sales) * 100) : "",
+    cfo: formatNumber(Number(getCell(cells, 82, latestCol)) || 0, 0),
+    currentPrice: formatNumber(currentPrice)
+  };
+}
+
 export default function Home() {
   const [hydrated, setHydrated] = useState(false);
-  const [data, setData] = useState<AppData>({ companies: [demoCompany()], portfolio: [] });
+  const [data, setData] = useState<AppData>({ companies: [demoCompany()], portfolio: [], fundamentals: {} });
   const [activePage, setActivePage] = useState<PageId>("dashboard");
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [selectedId, setSelectedId] = useState("");
@@ -471,16 +638,16 @@ export default function Home() {
       if (stored) {
         const parsed = JSON.parse(stored) as Partial<AppData>;
         const companies = (parsed.companies || []).map(normalizeCompany);
-        setData({ companies: companies.length ? companies : [demoCompany()], portfolio: parsed.portfolio || [] });
+        setData({ companies: companies.length ? companies : [demoCompany()], portfolio: parsed.portfolio || [], fundamentals: parsed.fundamentals || {} });
         setSelectedId(companies[0]?.id || "");
       } else {
         const sample = demoCompany();
-        setData({ companies: [sample], portfolio: [] });
+        setData({ companies: [sample], portfolio: [], fundamentals: {} });
         setSelectedId(sample.id);
       }
     } catch {
       const sample = demoCompany();
-      setData({ companies: [sample], portfolio: [] });
+      setData({ companies: [sample], portfolio: [], fundamentals: {} });
       setSelectedId(sample.id);
     } finally {
       setHydrated(true);
@@ -544,6 +711,45 @@ export default function Home() {
     }));
   }
 
+  function findFundamentals(ticker: string, companyName: string, source = data.fundamentals) {
+    const normalizedTicker = ticker.toUpperCase();
+    const normalizedName = normalizeKey(companyName);
+    return (
+      Object.values(source).find((record) => record.ticker && record.ticker.toUpperCase() === normalizedTicker) ||
+      Object.values(source).find((record) => {
+        const recordName = normalizeKey(record.companyName);
+        return recordName.includes(normalizedName) || normalizedName.includes(recordName);
+      })
+    );
+  }
+
+  function applyFundamentals(company: Company, record?: FundamentalsRecord) {
+    if (!record) return company;
+    const priceForPe = asNumber(company.financials.currentPrice) || asNumber(record.currentPrice);
+    const eps = asNumber(record.eps);
+
+    return {
+      ...company,
+      marketCap: record.marketCap || company.marketCap,
+      dataSource: `${company.dataSource || "Company search"} + ${record.source} (${record.reportDate || record.importedAt.slice(0, 10)})`,
+      financials: {
+        ...company.financials,
+        revenue: record.revenue || company.financials.revenue,
+        profit: record.profit || company.financials.profit,
+        eps: record.eps || company.financials.eps,
+        pe: eps && priceForPe ? formatNumber(priceForPe / eps) : record.pe || company.financials.pe,
+        roe: record.roe || company.financials.roe,
+        roce: record.roce || company.financials.roce,
+        debtEquity: record.debtEquity || company.financials.debtEquity,
+        salesGrowth: record.salesGrowth || company.financials.salesGrowth,
+        profitGrowth: record.profitGrowth || company.financials.profitGrowth,
+        opm: record.opm || company.financials.opm,
+        cfo: record.cfo || company.financials.cfo,
+        currentPrice: company.financials.currentPrice || record.currentPrice
+      }
+    };
+  }
+
   function createCompany() {
     const company = blankCompany();
     setData((current) => ({ ...current, companies: [company, ...current.companies] }));
@@ -582,9 +788,10 @@ export default function Home() {
         profitGrowth: item.profitGrowth
       }
     };
+    const enrichedCompany = applyFundamentals(company, findFundamentals(item.ticker, item.name));
 
-    setData((current) => ({ ...current, companies: [company, ...current.companies] }));
-    setSelectedId(company.id);
+    setData((current) => ({ ...current, companies: [enrichedCompany, ...current.companies] }));
+    setSelectedId(enrichedCompany.id);
     setActivePage("research");
   }
 
@@ -617,7 +824,7 @@ export default function Home() {
         const parsed = JSON.parse(String(reader.result)) as Partial<AppData>;
         if (!parsed.companies) throw new Error("Missing companies");
         const companies = parsed.companies.map(normalizeCompany);
-        setData({ companies, portfolio: parsed.portfolio || [] });
+        setData({ companies, portfolio: parsed.portfolio || [], fundamentals: parsed.fundamentals || {} });
         setSelectedId(companies[0]?.id || "");
         setActivePage("dashboard");
       } catch {
@@ -626,6 +833,43 @@ export default function Home() {
     };
     reader.readAsText(file);
     event.target.value = "";
+  }
+
+  async function importFundamentals(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const extracted = extractScreenerWorkbook(await file.arrayBuffer());
+      const nameMatch = data.companies.find((company) => {
+        const recordName = normalizeKey(extracted.companyName);
+        const companyName = normalizeKey(company.name);
+        return recordName.includes(companyName) || companyName.includes(recordName);
+      });
+      const record = { ...extracted, ticker: nameMatch?.ticker || extracted.ticker };
+      const key = record.ticker || normalizeKey(record.companyName);
+      const nextFundamentals = { ...data.fundamentals, [key]: record };
+      const matchedCompany = data.companies.find((company) => findFundamentals(company.ticker, company.name, nextFundamentals));
+
+      setData((current) => ({
+        ...current,
+        fundamentals: nextFundamentals,
+        companies: current.companies.map((company) => {
+          const match = findFundamentals(company.ticker, company.name, nextFundamentals);
+          return match ? applyFundamentals(company, match) : company;
+        })
+      }));
+
+      if (matchedCompany) {
+        setSelectedId(matchedCompany.id);
+      }
+      setActivePage("fundamentals");
+      window.alert(`Imported fundamentals for ${record.companyName}.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not import this Screener workbook.");
+    } finally {
+      event.target.value = "";
+    }
   }
 
   function updateSelected(patch: Partial<Company>) {
@@ -1024,6 +1268,75 @@ Verify all figures, review primary documents, test thesis killers and complete v
           </div>
           <div className="note">
             IMRS uses Kite for market-data lookup only. It does not place orders.
+          </div>
+        </section>
+      </>
+    );
+  }
+
+  function renderFundamentals() {
+    const records = Object.values(data.fundamentals).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+
+    return (
+      <>
+        <PageHead eyebrow="Screener data" title="Fundamentals Import">
+          Upload Screener Excel exports once, then IMRS auto-fills fundamentals when matching companies are imported.
+        </PageHead>
+        <section className="panel">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Import center</span>
+              <h2>Screener Excel</h2>
+            </div>
+            <label className="file-button">
+              <Upload size={17} /> Upload Excel
+              <input type="file" accept=".xlsx" onChange={importFundamentals} />
+            </label>
+          </div>
+          <div className="info">
+            This importer is built for Screener company Excel exports like your Reliance workbook. It extracts the Data Sheet and fills
+            market cap, revenue, profit, EPS, P/E, ROE, ROCE, debt/equity, growth, OPM and cash flow.
+          </div>
+          <div className="note">Promoter holding is not present in this Screener workbook format, so it remains manual for now.</div>
+        </section>
+        <section className="panel" style={{ marginTop: 14 }}>
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Saved fundamentals</span>
+              <h2>{records.length} records</h2>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  <th>Report</th>
+                  <th>Market cap</th>
+                  <th>Sales</th>
+                  <th>Profit</th>
+                  <th>ROCE</th>
+                  <th>ROE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map((record) => (
+                  <tr key={record.id}>
+                    <td>
+                      <strong>{record.companyName}</strong>
+                      <small>{record.ticker || "Matched by name"}</small>
+                    </td>
+                    <td>{record.reportDate || "-"}</td>
+                    <td>{record.marketCap || "-"}</td>
+                    <td>{record.revenue || "-"}</td>
+                    <td>{record.profit || "-"}</td>
+                    <td>{record.roce ? `${record.roce}%` : "-"}</td>
+                    <td>{record.roe ? `${record.roe}%` : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {records.length === 0 ? <p>No Screener exports imported yet.</p> : null}
           </div>
         </section>
       </>
@@ -1458,6 +1771,7 @@ Verify all figures, review primary documents, test thesis killers and complete v
     ["screener", "Screener", <Gauge size={16} key="screener" />],
     ["watchlist", "Watchlist", <Database size={16} key="watchlist" />],
     ["portfolio", "Portfolio", <BriefcaseBusiness size={16} key="portfolio" />],
+    ["fundamentals", "Fundamentals", <FileText size={16} key="fundamentals" />],
     ["committee", "Committee", <Users size={16} key="committee" />],
     ["research", "Research", <FlaskConical size={16} key="research" />],
     ["kite", "Kite", <KeyRound size={16} key="kite" />]
@@ -1543,6 +1857,7 @@ Verify all figures, review primary documents, test thesis killers and complete v
           {activePage === "screener" ? renderScreener() : null}
           {activePage === "watchlist" ? renderWatchlist() : null}
           {activePage === "portfolio" ? renderPortfolio() : null}
+          {activePage === "fundamentals" ? renderFundamentals() : null}
           {activePage === "committee" ? renderCommittee() : null}
           {activePage === "research" ? renderResearch() : null}
           {activePage === "kite" ? renderKite() : null}

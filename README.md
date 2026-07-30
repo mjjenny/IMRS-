@@ -50,6 +50,18 @@ https://imrs-omega.vercel.app/api/kite/callback
 
 Then open IMRS, go to the Kite page, and click Connect Kite. Kite access tokens are session based, so reconnect after the token expires.
 
+## Screener Fundamentals
+
+Use the Fundamentals page to upload Screener company Excel exports. IMRS reads the workbook's `Data Sheet`, stores the latest fundamentals locally, and auto-fills matching imported companies.
+
+The importer currently fills:
+
+```text
+Market cap, revenue, profit, EPS, P/E, ROE, ROCE, debt/equity, sales growth, profit growth, OPM, operating cash flow
+```
+
+Promoter holding is not present in the tested Screener company workbook, so it remains manual.
+
 The old single-file version is preserved at:
 
 ```text
