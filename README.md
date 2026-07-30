@@ -175,6 +175,22 @@ If `OPENAI_MODEL` is not set, IMRS uses `gpt-5-mini`. The OpenAI key is used onl
 
 The browser never receives the API key. The report page still works without OpenAI by using the rule-based IMRS report.
 
+## PDF Research Reports
+
+After syncing a company and generating the report, open:
+
+```text
+Research > Report > Export PDF
+```
+
+IMRS opens a clean print-ready investment committee report containing:
+
+```text
+AI report, financials, ownership, scorecard, valuation scenarios, business thesis, risks, catalysts, documents, quarterly reviews and cleaned Trendlyne intelligence
+```
+
+In Chrome, choose `Save as PDF` in the print dialog.
+
 ## Data Automation Roadmap
 
 Current automated sources:

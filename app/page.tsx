@@ -5,6 +5,7 @@ import {
   BriefcaseBusiness,
   Database,
   Download,
+  FileDown,
   FileText,
   FlaskConical,
   Gauge,
@@ -744,6 +745,185 @@ Required next diligence:
 - Review latest annual report, quarterly results and concall commentary.
 - Compare valuation, ROE/ROCE and growth against direct peers.
 - Treat this as research support, not financial advice.`;
+}
+
+function escapeHtml(value: string | number) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function nl2br(value: string) {
+  return escapeHtml(value).replace(/\r?\n/g, "<br />");
+}
+
+function printableTable(rows: Array<[string, string | number]>) {
+  return `<table>${rows
+    .map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value || "-")}</td></tr>`)
+    .join("")}</table>`;
+}
+
+function printableList(items: string[]) {
+  return items.length ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "<p>No entries recorded.</p>";
+}
+
+function printableSection(title: string, body: string) {
+  return `<section><h2>${escapeHtml(title)}</h2>${body}</section>`;
+}
+
+function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIntelligenceRecord) {
+  const f = company.financials;
+  const diagnostics = investmentDiagnostics(company);
+  const bullets = getReportBullets(company);
+  const generatedAt = new Date().toLocaleString("en-IN");
+  const reportText = company.aiOutput || buildInvestmentReportText(company);
+  const valuationRows: Array<[string, string]> = (["bear", "base", "bull"] as const).map((caseName) => {
+    const scenario = company.valuation[caseName];
+    return [
+      `${caseName.toUpperCase()} case`,
+      `EPS CAGR ${scenario.revenueGrowth || "-"}%; Future EPS INR ${scenario.eps || "-"}; Exit P/E ${
+        scenario.pe || "-"
+      }; Probability ${scenario.probability || "-"}%; Implied price INR ${Math.round(impliedPrice(scenario)).toLocaleString("en-IN")}`
+    ];
+  });
+
+  const scoreRows = (Object.entries(scoreLabels) as Array<[ScoreKey, string]>).map(
+    ([key, label]) => [label, `${company.scores[key]}/10`] as [string, string]
+  );
+
+  const trendlyneSections = trendlyneIntel
+    ? [
+        ["Overview and DVM", trendlyneIntel.overview],
+        ["Technicals", trendlyneIntel.technical],
+        ["News and announcements", trendlyneIntel.news],
+        ["Corporate events", trendlyneIntel.events],
+        ["Ownership", trendlyneIntel.shareholding],
+        ["Insider / SAST", trendlyneIntel.sast],
+        ["Bulk and block deals", trendlyneIntel.bulkBlock],
+        ["Document search", trendlyneIntel.documents]
+      ]
+        .map(([title, value]) => printableSection(`Trendlyne - ${title}`, `<p>${nl2br(cleanTrendlyneIntel(title, value))}</p>`))
+        .join("")
+    : printableSection("Trendlyne intelligence", "<p>No Trendlyne intelligence pack is saved for this company yet.</p>");
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(company.name)} - IMRS Research Report</title>
+  <style>
+    @page { margin: 16mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #102019; font-family: Arial, Helvetica, sans-serif; line-height: 1.45; }
+    header { border-bottom: 3px solid #137b5d; padding-bottom: 14px; margin-bottom: 18px; }
+    h1 { margin: 0 0 6px; font-size: 30px; }
+    h2 { margin: 0 0 10px; font-size: 18px; color: #0c634b; }
+    h3 { margin: 0 0 8px; font-size: 15px; }
+    p { margin: 0 0 10px; }
+    section { break-inside: avoid; border: 1px solid #d7e1dc; border-radius: 8px; padding: 14px; margin: 0 0 12px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border-top: 1px solid #d7e1dc; padding: 8px; vertical-align: top; text-align: left; }
+    th { width: 34%; color: #667670; font-size: 12px; text-transform: uppercase; }
+    ul { margin: 8px 0 0; padding-left: 20px; }
+    li { margin-bottom: 5px; }
+    .meta { color: #667670; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; }
+    .stat { border: 1px solid #d7e1dc; border-radius: 8px; padding: 12px; }
+    .stat span { display: block; color: #667670; font-size: 12px; }
+    .stat strong { display: block; margin-top: 6px; font-size: 22px; }
+    .memo { white-space: pre-wrap; }
+    .disclaimer { color: #667670; font-size: 12px; }
+    @media print {
+      button { display: none; }
+      .grid { grid-template-columns: repeat(4, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>${escapeHtml(company.name)}</h1>
+    <div class="meta">${escapeHtml(company.ticker || "-")} | ${escapeHtml(company.sector || "-")} | Market cap INR ${escapeHtml(
+      company.marketCap || "-"
+    )} cr | Generated ${escapeHtml(generatedAt)}</div>
+    <p class="disclaimer">IMRS research support only. Verify primary filings before making any investment decision.</p>
+  </header>
+
+  <div class="grid">
+    <div class="stat"><span>Conviction</span><strong>${score(company)}/100</strong></div>
+    <div class="stat"><span>Multibagger probability</span><strong>${diagnostics.multibaggerProbability}/100</strong></div>
+    <div class="stat"><span>Trap probability</span><strong>${diagnostics.trapProbability}/100</strong></div>
+    <div class="stat"><span>Weighted scenario price</span><strong>INR ${Math.round(weightedExpectedPrice(company)).toLocaleString("en-IN")}</strong></div>
+  </div>
+
+  ${printableSection("Executive verdict", `<p>${escapeHtml(diagnostics.finalVerdict)}</p>`)}
+  ${printableSection("AI / analyst report", `<div class="memo">${nl2br(reportText)}</div>`)}
+  ${printableSection(
+    "Financials",
+    printableTable([
+      ["Revenue INR crore", f.revenue],
+      ["Net profit INR crore", f.profit],
+      ["EPS INR", f.eps],
+      ["P/E", f.pe],
+      ["ROE %", f.roe],
+      ["ROCE %", f.roce],
+      ["Debt/Equity", f.debtEquity],
+      ["Sales growth %", f.salesGrowth],
+      ["Profit growth %", f.profitGrowth],
+      ["Operating margin %", f.opm],
+      ["Operating cash flow INR crore", f.cfo],
+      ["Current price INR", f.currentPrice],
+      ["DVM durability", f.dvmDurability],
+      ["DVM valuation", f.dvmValuation],
+      ["DVM momentum", f.dvmMomentum],
+      ["Analyst score", f.analystScore]
+    ])
+  )}
+  ${printableSection(
+    "Ownership",
+    printableTable([
+      ["Promoter holding %", f.promoterHolding],
+      ["FII holding %", f.fiiHolding],
+      ["DII holding %", f.diiHolding],
+      ["Institutional holding %", f.institutionalHolding]
+    ])
+  )}
+  ${printableSection("Scorecard", printableTable(scoreRows))}
+  ${printableSection("Valuation scenarios", printableTable([...valuationRows, ["Probability-weighted expected price", `INR ${Math.round(weightedExpectedPrice(company)).toLocaleString("en-IN")}`]]))}
+  ${printableSection("Business quality", `<p>${nl2br(company.businessSummary || "Not entered.")}</p>`)}
+  ${printableSection("Growth runway and multibagger case", `<p>${nl2br(company.industryOpportunity || company.multibaggerCase || "Not entered.")}</p>`)}
+  ${printableSection("Management assessment", `<p>${nl2br(company.managementAssessment || "Not entered.")}</p>`)}
+  ${printableSection("Bull thesis", `<p>${nl2br(company.bullThesis || "Not entered.")}</p>`)}
+  ${printableSection("Bear thesis", `<p>${nl2br(company.bearThesis || "Not entered.")}</p>`)}
+  ${printableSection("Key assumptions", `<p>${nl2br(company.keyAssumptions || "Not entered.")}</p>`)}
+  ${printableSection("Thesis killers", `<p>${nl2br(company.thesisKillers || "Not entered.")}</p>`)}
+  ${printableSection("What must happen for 5x/10x", printableList(bullets.fiveTen))}
+  ${printableSection("What would make this fail", printableList(bullets.fail))}
+  ${printableSection(
+    "Risk register",
+    company.risks.length
+      ? printableTable(company.risks.map((risk) => [risk.title, `${risk.probability}/${risk.impact}. ${risk.mitigation}`]))
+      : "<p>No risks recorded.</p>"
+  )}
+  ${printableSection(
+    "Catalysts",
+    company.catalysts.length
+      ? printableTable(company.catalysts.map((catalyst) => [catalyst.title, `${catalyst.status}; ${catalyst.date || "No date"}. ${catalyst.notes}`]))
+      : "<p>No catalysts recorded.</p>"
+  )}
+  ${printableSection(
+    "Documents",
+    company.documents.length ? printableTable(company.documents.map((document) => [document.name, `${document.type}; ${document.status}`])) : "<p>No documents recorded.</p>"
+  )}
+  ${printableSection(
+    "Quarterly reviews",
+    company.reviews.length ? printableTable(company.reviews.map((review) => [review.quarter, `${review.verdict}. ${review.notes}`])) : "<p>No reviews recorded.</p>"
+  )}
+  ${trendlyneSections}
+</body>
+</html>`;
 }
 
 function clampScore(value: number) {
@@ -2510,6 +2690,24 @@ export default function Home() {
     }
   }
 
+  function exportSelectedReportPdf() {
+    if (!selected) return;
+    const trendlyneIntel = findTrendlyneIntelligence(selected.ticker, selected.name);
+    const reportWindow = window.open("", "_blank");
+    if (!reportWindow) {
+      window.alert("Chrome blocked the report window. Allow pop-ups for IMRS, then try Export PDF again.");
+      return;
+    }
+
+    reportWindow.document.open();
+    reportWindow.document.write(buildPrintableReportHtml(selected, trendlyneIntel));
+    reportWindow.document.close();
+    reportWindow.focus();
+    window.setTimeout(() => {
+      reportWindow.print();
+    }, 500);
+  }
+
   function renderDashboard() {
     const companies = data.companies;
     const average = companies.length ? Math.round(companies.reduce((sum, company) => sum + score(company), 0) / companies.length) : 0;
@@ -3232,6 +3430,9 @@ export default function Home() {
               </button>
               <button onClick={generateOpenAiReport} disabled={aiGenerating}>
                 <NotebookText size={17} /> {aiGenerating ? "Generating..." : "Generate AI Report"}
+              </button>
+              <button className="secondary" onClick={exportSelectedReportPdf}>
+                <FileDown size={17} /> Export PDF
               </button>
             </div>
           </section>
