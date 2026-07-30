@@ -28,8 +28,6 @@ type Scores = {
   riskReward: number;
 };
 
-type ScoreKey = keyof Scores;
-
 type Financials = {
   revenue: string;
   profit: string;
@@ -237,19 +235,6 @@ type CompanySearchResult = {
 
 type PageId = "dashboard" | "search" | "fundamentals" | "research";
 type TabId = "overview" | "financials" | "report" | "documents";
-
-const scoreLabels: Record<ScoreKey, string> = {
-  businessQuality: "Business quality",
-  managementQuality: "Management quality",
-  financialStrength: "Financial strength",
-  growthRunway: "Growth runway",
-  moat: "Competitive moat",
-  governance: "Governance",
-  valuation: "Valuation attractiveness",
-  cashFlowQuality: "Cash-flow quality",
-  industryTailwinds: "Industry tailwinds",
-  riskReward: "Risk-reward"
-};
 
 const tabs: Array<[TabId, string]> = [
   ["overview", "Overview"],
@@ -560,27 +545,6 @@ function normalizeCompany(raw: Partial<Company>): Company {
   };
 }
 
-function score(company: Company) {
-  const values = Object.values(company.scores).map(Number);
-  return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10);
-}
-
-function verdict(company: Company) {
-  const result = score(company);
-  if (result >= 80) return "High-conviction candidate. Complete valuation and forensic verification.";
-  if (result >= 70) return "Promising candidate. Deepen research before position sizing.";
-  if (result >= 60) return "Watchlist quality. Key weaknesses must improve.";
-  return "Low-conviction. Avoid until evidence changes.";
-}
-
-function highRiskCount(company: Company) {
-  return company.risks.filter((risk) => risk.impact === "High" || risk.probability === "High").length;
-}
-
-function clampProbability(value: number) {
-  return Math.max(5, Math.min(95, Math.round(value)));
-}
-
 function metricValue(company: Company, record: FundamentalsRecord | undefined, key: keyof Financials) {
   return record?.[key as keyof FundamentalsRecord] || company.financials[key];
 }
@@ -729,182 +693,6 @@ function dataQualityReview(company: Company, record?: FundamentalsRecord, intell
   }
 
   return { p0, p1, notes, perShareMismatch, shareCountMismatch, cfoInvalid, opmInvalid, peInvalid, staleFinancials, conglomerateNeedsSegments };
-}
-
-function investmentDiagnostics(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
-  const m = metricSet(company, record);
-  const quality = dataQualityReview(company, record, intelligence);
-  const conviction = score(company);
-  const roe = asNumber(m.roe);
-  const roce = asNumber(m.roce);
-  const pe = usablePe(company, record);
-  const profitGrowth = asNumber(m.profitGrowth);
-  const salesGrowth = asNumber(m.salesGrowth);
-  const debt = asNumber(m.debtEquity);
-  const dvmMomentum = asNumber(m.dvmMomentum);
-  const dvmValuation = asNumber(m.dvmValuation);
-  const weakReturns = (roe > 0 && roe < 12) || (roce > 0 && roce < 12);
-  const negativeProfit = profitGrowth < 0;
-  const dataContradiction = quality.p0.length > 0;
-  const expensive = pe > 45 || (dvmValuation > 0 && dvmValuation < 45);
-  const weakMomentum = dvmMomentum > 0 && dvmMomentum < 45;
-  const severeRisks = highRiskCount(company);
-  const sanityPenalty = Math.min(30, quality.p0.length * 10 + quality.p1.length * 4);
-
-  let multibaggerProbability = clampProbability(
-    conviction * 0.48 +
-      company.scores.growthRunway * 3.2 +
-      company.scores.businessQuality * 2.2 +
-      company.scores.financialStrength * 1.6 +
-      (salesGrowth >= 20 ? 7 : salesGrowth >= 10 ? 3 : 0) +
-      (profitGrowth >= 20 ? 7 : negativeProfit ? -14 : 0) +
-      (debt > 0 && debt <= 0.5 ? 4 : debt > 1 ? -8 : 0) -
-      (expensive ? 7 : 0) -
-      (weakReturns ? 10 : 0) -
-      severeRisks * 4 -
-      sanityPenalty
-  );
-
-  let trapProbability = clampProbability(
-    100 -
-      conviction * 0.52 +
-      (negativeProfit ? 18 : 0) +
-      (weakReturns ? 16 : 0) +
-      (expensive ? 11 : 0) +
-      (weakMomentum ? 8 : 0) +
-      severeRisks * 7 -
-      (salesGrowth >= 20 && profitGrowth >= 15 ? 8 : 0) -
-      (debt > 0 && debt <= 0.5 ? 5 : 0) +
-      sanityPenalty
-  );
-
-  if (quality.p0.length >= 2) {
-    multibaggerProbability = Math.min(multibaggerProbability, 45);
-    trapProbability = Math.min(Math.max(trapProbability, 35), 70);
-  }
-
-  if (isMegaCapCompany(company, record)) {
-    multibaggerProbability = Math.min(multibaggerProbability, 35);
-  }
-
-  const finalVerdict =
-    quality.p0.length >= 2
-      ? "Verdict withheld - core per-share or source-basis checks failed. Re-sync, reconcile share basis and verify source periods before relying on valuation."
-      : dataContradiction
-      ? "Provisional view with data-quality warning. Reconcile exceptional items, base effects, units and extraction accuracy before position sizing."
-      : isMegaCapCompany(company, record)
-      ? "Large-cap compounder/re-rating watch. Use segment analysis and valuation discipline, not a small-cap multibagger lens."
-      : trapProbability >= 60
-      ? "Potential trap. Do not upgrade unless fundamentals and price discipline improve."
-      : multibaggerProbability >= 70 && trapProbability < 40
-        ? "High-potential candidate. Move to full diligence and valuation work."
-        : multibaggerProbability >= 55
-          ? "Promising but unproven. Keep on active watchlist and verify the thesis."
-          : "Research watchlist only. Evidence is not strong enough for multibagger status.";
-
-  return {
-    multibaggerProbability,
-    trapProbability,
-    finalVerdict,
-    weakReturns,
-    negativeProfit,
-    dataContradiction,
-    expensive,
-    weakMomentum,
-    severeRisks,
-    quality
-  };
-}
-
-function impliedPrice(scenario: ValuationCase) {
-  return asNumber(scenario.eps) * asNumber(scenario.pe);
-}
-
-function valuationCaseIssue(company: Company, scenario: ValuationCase, record?: FundamentalsRecord) {
-  const implied = impliedPrice(scenario);
-  if (asNumber(scenario.eps) <= 0 || asNumber(scenario.pe) <= 0) return "Failed sanity check: EPS and exit P/E must both be positive.";
-  if (implied <= 0) return "Failed sanity check: implied price must be positive.";
-  const currentPrice = asNumber(metricSet(company, record).currentPrice);
-  if (!implied) return "Missing EPS or P/E assumption.";
-  if (currentPrice && isMegaCapCompany(company, record) && implied / currentPrice > 3) {
-    return "Failed sanity check: mega-cap scenario implies more than 3x current price. Rebuild from validated EPS and P/E.";
-  }
-  if (currentPrice && implied / currentPrice > 10) {
-    return "Failed sanity check: scenario implies more than 10x current price without supporting model evidence.";
-  }
-  return "";
-}
-
-function valuationPriceText(company: Company, scenario: ValuationCase, record?: FundamentalsRecord) {
-  const issue = valuationCaseIssue(company, scenario, record);
-  if (issue) return `N/V - ${issue}`;
-  return `INR ${Math.round(impliedPrice(scenario)).toLocaleString("en-IN")}`;
-}
-
-function hasInvalidValuationCases(company: Company, record?: FundamentalsRecord) {
-  return (["bear", "base", "bull"] as const).some((key) => valuationCaseIssue(company, company.valuation[key], record));
-}
-
-function weightedExpectedPrice(company: Company) {
-  return (["bear", "base", "bull"] as const).reduce((sum, key) => {
-    const scenario = company.valuation[key];
-    return sum + impliedPrice(scenario) * (asNumber(scenario.probability) / 100);
-  }, 0);
-}
-
-function weightedExpectedPriceValue(company: Company, record?: FundamentalsRecord) {
-  if (hasInvalidValuationCases(company, record)) return 0;
-  return weightedExpectedPrice(company);
-}
-
-function weightedExpectedPriceText(company: Company, record?: FundamentalsRecord) {
-  if (hasInvalidValuationCases(company, record)) return "N/V - one or more scenarios failed sanity validation";
-  return `INR ${Math.round(weightedExpectedPrice(company)).toLocaleString("en-IN")}`;
-}
-
-function getReportBullets(company: Company, record?: FundamentalsRecord) {
-  const f = company.financials;
-  const diagnostics = investmentDiagnostics(company, record);
-  if (isMegaCapCompany(company, record)) {
-    return {
-      fiveTen: [
-        "For a mega-cap, replace the 5x/10x small-cap lens with a compounder/re-rating lens.",
-        "Segment profit pools must expand materially across Retail, Digital/Jio, O2C/Oil & Gas or New Energy.",
-        "Returns depend on earnings growth, cash generation, capital allocation and valuation discipline rather than a pure multibagger rerating."
-      ],
-      fail: [
-        "Segment-level growth fails to translate into consolidated free cash flow and ROCE improvement.",
-        "Large capex absorbs cash without visible return-on-capital improvement.",
-        "Valuation remains full while earnings growth is driven by one-offs, commodity cycles or accounting/base effects."
-      ]
-    };
-  }
-  const fiveTen =
-    diagnostics.multibaggerProbability >= 65
-      ? [
-          `Sales and earnings need to compound above ${metric(f.salesGrowth || "20", "%")} without cash-flow deterioration.`,
-          `ROCE/ROE should remain or move above 18-20%, with reinvestment opportunities still available.`,
-          "Valuation must stay disciplined enough that earnings growth, not only multiple expansion, drives returns."
-        ]
-      : [
-          "Growth must accelerate materially and prove it is structural rather than one-off.",
-          "ROE/ROCE and cash conversion need to improve before this can qualify as a serious 5x/10x candidate.",
-          "The company needs a clearer moat, stronger execution evidence and a valuation that leaves room for upside."
-        ];
-  const fail =
-    diagnostics.trapProbability >= 55
-      ? [
-          "Profit growth remains weak or negative while valuation stays elevated.",
-          "ROE/ROCE fail to recover, suggesting the business is not earning enough on capital.",
-          "Governance, insider activity, cash-flow quality or ownership trends deteriorate."
-        ]
-      : [
-          "Two or more quarters miss the core growth or margin assumptions.",
-          "Operating cash flow fails to follow reported earnings.",
-          "A new governance, promoter, auditor, pledge or customer-concentration concern appears."
-        ];
-
-  return { fiveTen, fail };
 }
 
 function metricPeriod(record?: FundamentalsRecord) {
@@ -1096,128 +884,6 @@ function scrubReportText(value: string) {
 
 function savedResearchText(value: string, fallback: string) {
   return scrubReportText(value) || fallback;
-}
-
-function buildInvestmentReportText(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
-  const diagnostics = investmentDiagnostics(company, record, intelligence);
-  const review = dataQualityReview(company, record, intelligence);
-  const bullets = getReportBullets(company, record);
-  const risks = meaningfulRisks(company)
-    .slice(0, 5)
-    .map((risk) => `- ${risk.title}: ${risk.probability}/${risk.impact}. ${risk.mitigation}`)
-    .join("\n");
-  const catalysts = meaningfulCatalysts(company)
-    .slice(0, 5)
-    .map((catalyst) => `- ${catalyst.title}: ${catalyst.status}. ${catalyst.notes}`)
-    .join("\n");
-  const sanity = sanityCheckItems(company, record, intelligence);
-  const needsVerification = needsVerificationItems(company, record, intelligence);
-  const cfoDisplay = validatedMetric(company, record, "cfo", "INR crore");
-  const framework = isMegaCapCompany(company, record) ? "Compounder/re-rating framework" : "Multibagger framework";
-  const weightedValue = weightedExpectedPriceValue(company, record);
-  const currentPrice = asNumber(metricSet(company, record).currentPrice);
-  const impliedUpside =
-    currentPrice && weightedValue ? `${formatNumber(((weightedValue / currentPrice) - 1) * 100, 1)}% versus current price` : "N/V";
-  const provisionalView =
-    diagnostics.multibaggerProbability > diagnostics.trapProbability + 15
-      ? "Positive watchlist candidate, subject to source reconciliation and peer valuation."
-      : diagnostics.trapProbability > diagnostics.multibaggerProbability + 15
-        ? "High trap-risk watch. Require evidence of growth durability, margin quality and valuation support before upgrade."
-        : "Balanced watchlist view. Evidence is mixed; wait for stronger proof from filings, results and valuation work.";
-
-  return `IMRS Stock Research Report - ${company.name}
-
-Sanity check before verdict:
-${sanity.map((item) => `- ${item}`).join("\n")}
-
-Executive verdict:
-${diagnostics.finalVerdict}
-
-Conviction score: ${score(company)}/100
-Multibagger probability: ${diagnostics.multibaggerProbability}/100
-Trap probability: ${diagnostics.trapProbability}/100
-Research framework: ${framework}
-Evidence confidence: ${review.p0.length ? `LOW (${review.p0.length} critical evidence issue${review.p0.length > 1 ? "s" : ""})` : "Passed first-level checks"}
-Provisional investment view: ${provisionalView}
-
-Business quality:
-${savedResearchText(company.businessSummary, businessModelDraft(company, record))}
-
-Financial quality:
-Revenue ${validatedMetric(company, record, "revenue", "INR crore")}; net profit ${validatedMetric(
-    company,
-    record,
-    "profit",
-    "INR crore"
-  )}; EPS ${validatedMetric(
-    company,
-    record,
-    "eps",
-    "INR",
-  )}; P/E ${validatedMetric(company, record, "pe", "x")}; ROE ${validatedMetric(company, record, "roe", "%")}; ROCE ${validatedMetric(
-    company,
-    record,
-    "roce",
-    "%"
-  )}; debt/equity ${validatedMetric(company, record, "debtEquity", "x")}; margin evidence ${marginEvidenceText(company, record)}; CFO ${cfoDisplay}.
-
-Valuation:
-Bear/base/bull implied prices are ${valuationPriceText(company, company.valuation.bear, record)}, ${valuationPriceText(
-    company,
-    company.valuation.base,
-    record
-  )} and ${valuationPriceText(company, company.valuation.bull, record)}. Probability-weighted expected price is ${weightedExpectedPriceText(
-    company,
-    record
-  )}. This is a scenario output, not a guaranteed target. Scenario EPS should use the same validated EPS basis as the financial table; if evidence confidence is low, treat scenario prices as provisional.
-Implied upside/downside: ${impliedUpside}.
-
-Growth runway:
-${savedResearchText(
-  company.industryOpportunity || company.multibaggerCase,
-  `Industry exposure: ${inferredSector(company, record)}. Growth runway must be verified from order book, end-market demand, capacity additions, margin trajectory and management commentary.`
-)}
-
-Ownership:
-${ownershipLines(company, record).map((item) => `- ${item}`).join("\n")}
-
-Business model and segment checks:
-${
-  review.conglomerateNeedsSegments
-    ? "Required before final verdict. For Reliance-like diversified companies, split O2C, Oil & Gas, Retail, Digital/Jio, New Energy and Others with revenue, EBITDA/margin, capex and YoY trend."
-    : "Identify revenue segments, margin drivers, customer/end-market mix, order book where available, capacity additions and competitive position. Do not substitute ownership tables or technical indicators for business analysis."
-}
-
-Key risks:
-${risks || savedResearchText(company.bearThesis, "No risk register has been built yet.")}
-
-Catalysts:
-${catalysts || "No catalysts have been recorded yet."}
-
-Needs verification:
-${needsVerification.length ? needsVerification.map((item) => `- ${item}`).join("\n") : "- No major unit/date sanity warnings from the current data packet."}
-
-Data required to make this institutional-grade:
-- Latest annual report and auditor notes for accounting policies, segment data, related-party items and contingent liabilities.
-- Latest quarterly result and investor/concall commentary for order book, margin bridge and exceptional items.
-- Cash-flow statement with period and units, because cash conversion is central to trap detection.
-- Peer valuation set with ROE/ROCE, growth, P/E, EV/EBITDA and market-cap comparison.
-- Explicit source period for every financial metric used in valuation.
-
-What must happen for 5x/10x:
-${bullets.fiveTen.map((item) => `- ${item}`).join("\n")}
-
-What would make this fail:
-${bullets.fail.map((item) => `- ${item}`).join("\n")}
-
-Final recommendation:
-${diagnostics.finalVerdict}
-
-Required next diligence:
-- Verify all figures against primary filings.
-- Review latest annual report, quarterly results and concall commentary.
-- Compare valuation, ROE/ROCE and growth against direct peers.
-- Treat this as research support, not financial advice.`;
 }
 
 function escapeHtml(value: string | number) {
@@ -2077,29 +1743,6 @@ function buildIntelligenceDigest(intelligence?: TrendlyneIntelligenceRecord) {
   };
 }
 
-function buildValuationForPacket(company: Company, record?: FundamentalsRecord) {
-  return {
-    validation: {
-      hasInvalidCases: hasInvalidValuationCases(company, record),
-      notes: (["bear", "base", "bull"] as const)
-        .map((key) => {
-          const issue = valuationCaseIssue(company, company.valuation[key], record);
-          return issue ? `${key.toUpperCase()}: ${issue}` : "";
-        })
-        .filter(Boolean)
-    },
-    scenarios: (["bear", "base", "bull"] as const).map((key) => ({
-      case: key,
-      revenueCagr: company.valuation[key].revenueGrowth,
-      futureEps: company.valuation[key].eps,
-      exitPe: company.valuation[key].pe,
-      probability: company.valuation[key].probability,
-      impliedPrice: valuationPriceText(company, company.valuation[key], record)
-    })),
-    weightedExpectedPrice: weightedExpectedPriceText(company, record)
-  };
-}
-
 function buildSavedNotesForPacket(company: Company, record?: FundamentalsRecord) {
   return {
     businessSummary: savedResearchText(company.businessSummary, businessModelDraft(company, record)),
@@ -2177,7 +1820,6 @@ function buildCleanCodexResearchPacket(
   trendlyneIntel?: TrendlyneIntelligenceRecord
 ) {
   const generatedAt = new Date().toISOString();
-  const diagnostics = investmentDiagnostics(company, fundamentalsRecord, trendlyneIntel);
   const review = dataQualityReview(company, fundamentalsRecord, trendlyneIntel);
   const cleanIntelligence = buildIntelligenceDigest(trendlyneIntel);
 
@@ -2240,30 +1882,7 @@ function buildCleanCodexResearchPacket(
       evidenceOrMilestone: packetSafeText(catalyst.notes) || packetSafeLabel(catalyst.notes)
     })),
     documents: company.documents,
-    quarterlyReviews: company.reviews,
-    legacyAppHeuristics: {
-      warning:
-        "Mechanical app-generated heuristics kept only for transparency. These are NOT evidence and must NOT anchor the final report. The analyst's own dynamic judgment replaces every number and verdict in this block.",
-      diagnostics: {
-        preliminaryVerdict: diagnostics.finalVerdict,
-        multibaggerProbability: diagnostics.multibaggerProbability,
-        trapProbability: diagnostics.trapProbability,
-        weakReturns: diagnostics.weakReturns,
-        negativeProfit: diagnostics.negativeProfit,
-        expensive: diagnostics.expensive,
-        weakMomentum: diagnostics.weakMomentum,
-        severeRiskCount: diagnostics.severeRisks
-      },
-      scorecard: (Object.entries(scoreLabels) as Array<[ScoreKey, string]>).map(([key, label]) => ({
-        label,
-        score: company.scores[key],
-        max: 10
-      })),
-      valuationScenarios: buildValuationForPacket(company, fundamentalsRecord)
-    },
-    appReferenceDraft:
-      "Do not treat this as the final report. Use it only as a checklist of issues the final stock-only report should consider.",
-    cleanedDraft: buildInvestmentReportText(company, fundamentalsRecord, trendlyneIntel)
+    quarterlyReviews: company.reviews
   };
 }
 
@@ -2319,79 +1938,6 @@ function mergeReviews(existing: Company["reviews"], additions: Company["reviews"
       return true;
     })
   ];
-}
-
-function trendlyneResearchBrief(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
-  const cleanOverview = cleanTrendlyneIntel("Overview and DVM", intelligence.overview);
-  const cleanTechnical = cleanTrendlyneIntel("Technicals", intelligence.technical);
-  const cleanNews = cleanTrendlyneIntel("News and announcements", intelligence.news);
-  const cleanEvents = cleanTrendlyneIntel("Corporate events", intelligence.events);
-  const cleanOwnership = cleanTrendlyneIntel("Ownership", intelligence.shareholding);
-  const cleanSast = cleanTrendlyneIntel("Insider / SAST", intelligence.sast);
-  const cleanDeals = cleanTrendlyneIntel("Bulk and block deals", intelligence.bulkBlock);
-  const cleanDocuments = cleanTrendlyneIntel("Document search", intelligence.documents);
-
-  return `IMRS Institutional Research Draft - ${record.companyName || company.name}
-
-Source:
-Trendlyne MCP, synced ${new Date(intelligence.importedAt).toLocaleString()} via ${intelligence.transport}.
-
-1. Executive view
-Current IMRS verdict: ${verdict(company)}
-
-This is an evidence-backed first draft, not a final investment recommendation. Treat the company as a candidate for deeper work only after verifying filings, annual reports, concalls, cash flow and governance.
-
-2. Financial and ownership snapshot
-Market cap INR ${record.marketCap || company.marketCap || "-"} cr; P/E ${validatedMetric(company, record, "pe", "x")}; ROE ${record.roe || "-"}%; ROCE ${
-    record.roce || "-"
-  }%; Debt/Equity ${record.debtEquity || "-"}; Sales growth ${record.salesGrowth || "-"}%; Profit growth ${
-    record.profitGrowth || "-"
-  }%; margin evidence ${marginEvidenceText(company, record)}; Cash-flow metric ${validatedMetric(company, record, "cfo", "INR crore")}.
-
-Ownership:
-Promoter ${record.promoterHolding || "-"}%; FII ${record.fiiHolding || "-"}%; DII ${record.diiHolding || "-"}%; Institutional ${
-    record.institutionalHolding || "-"
-  }%.
-
-3. DVM signal
-Durability ${record.dvmDurability || "-"}; Valuation ${record.dvmValuation || "-"}; Momentum ${record.dvmMomentum || "-"}.
-
-4. Multibagger potential
-${buildMultibaggerCase(company, record, intelligence)}
-
-5. Potential trap warning
-${buildBearThesis(company, record, intelligence)}
-
-6. Business quality
-${buildBusinessSummary(company, record, intelligence)}
-
-Source overview:
-${compactText(cleanOverview, 500)}
-
-7. Future prospects and catalysts
-${buildIndustryOpportunity(company, record, intelligence)}
-
-8. Technical and market sentiment evidence
-${compactText(cleanTechnical)}
-
-9. Recent news and announcements
-${compactText(cleanNews)}
-
-10. Corporate events
-${compactText(cleanEvents)}
-
-11. Ownership, insider/SAST and deals
-${compactText([cleanOwnership, cleanSast, cleanDeals].filter(Boolean).join("\n\n"))}
-
-12. Document search
-${compactText(cleanDocuments)}
-
-13. Next diligence
-- Read the latest annual report and auditor notes.
-- Check latest quarterly result and management commentary.
-- Confirm whether cash flow supports reported profits.
-- Compare valuation and ROCE against listed peers.
-- Decide whether this is a compounding candidate, cyclical opportunity, fair-value hold, or potential trap.`;
 }
 
 function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
@@ -2527,7 +2073,7 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
     status: company.status === "Watchlist" ? "Researching" : company.status,
     dataSource: `${company.dataSource || "Company search"} + Trendlyne MCP (${new Date(intelligence.importedAt).toISOString().slice(0, 10)})`,
     aiPrompt: setIfDraft(company.aiPrompt, buildAnalystPrompt(company)),
-    aiOutput: trendlyneResearchBrief(aiOutputCompany, record, intelligence),
+    aiOutput: company.aiOutput,
     documents: mergeDocuments(company.documents, trendlyneDocuments),
     catalysts: mergeCatalysts(company.catalysts, trendlyneCatalysts),
     risks: mergeRisks(company.risks, trendlyneRisks),
