@@ -553,6 +553,185 @@ function verdict(company: Company) {
   return "Low-conviction. Avoid until evidence changes.";
 }
 
+function clampScore(value: number) {
+  return Math.max(0, Math.min(10, Math.round(value)));
+}
+
+function scoreFromDvm(value: string, fallback: number) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? clampScore(numberValue / 10) : fallback;
+}
+
+function compactText(value: string, max = 900) {
+  const clean = value.replace(/\n{3,}/g, "\n\n").trim();
+  return clean.length > max ? `${clean.slice(0, max).trim()}\n...` : clean;
+}
+
+function hasMeaningfulText(value: string) {
+  const clean = value.trim().toLowerCase();
+  return Boolean(clean) && !clean.includes("no data returned");
+}
+
+function mergeDocuments(existing: Company["documents"], additions: Company["documents"]) {
+  const names = new Set(existing.map((item) => normalizeKey(item.name)));
+  return [
+    ...existing,
+    ...additions.filter((item) => {
+      const key = normalizeKey(item.name);
+      if (names.has(key)) return false;
+      names.add(key);
+      return true;
+    })
+  ];
+}
+
+function mergeRisks(existing: Company["risks"], additions: Company["risks"]) {
+  const names = new Set(existing.map((item) => normalizeKey(item.title)));
+  return [
+    ...existing,
+    ...additions.filter((item) => {
+      const key = normalizeKey(item.title);
+      if (names.has(key)) return false;
+      names.add(key);
+      return true;
+    })
+  ];
+}
+
+function mergeCatalysts(existing: Company["catalysts"], additions: Company["catalysts"]) {
+  const names = new Set(existing.map((item) => normalizeKey(item.title)));
+  return [
+    ...existing,
+    ...additions.filter((item) => {
+      const key = normalizeKey(item.title);
+      if (names.has(key)) return false;
+      names.add(key);
+      return true;
+    })
+  ];
+}
+
+function trendlyneResearchBrief(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  return `Trendlyne MCP Research Brief - ${record.companyName || company.name}
+
+Source:
+Trendlyne MCP, synced ${new Date(intelligence.importedAt).toLocaleString()} via ${intelligence.transport}.
+
+Financial and ownership snapshot:
+Market cap INR ${record.marketCap || company.marketCap || "-"} cr; P/E ${record.pe || "-"}; ROE ${record.roe || "-"}%; ROCE ${
+    record.roce || "-"
+  }%; Debt/Equity ${record.debtEquity || "-"}; Sales growth ${record.salesGrowth || "-"}%; Profit growth ${
+    record.profitGrowth || "-"
+  }%; OPM ${record.opm || "-"}%; Cash-flow metric ${record.cfo || "-"}.
+
+Ownership:
+Promoter ${record.promoterHolding || "-"}%; FII ${record.fiiHolding || "-"}%; DII ${record.diiHolding || "-"}%; Institutional ${
+    record.institutionalHolding || "-"
+  }%.
+
+DVM:
+Durability ${record.dvmDurability || "-"}; Valuation ${record.dvmValuation || "-"}; Momentum ${record.dvmMomentum || "-"}.
+
+Overview and DVM evidence:
+${compactText(intelligence.overview)}
+
+Technical evidence:
+${compactText(intelligence.technical)}
+
+Recent news and announcements:
+${compactText(intelligence.news)}
+
+Corporate events:
+${compactText(intelligence.events)}
+
+Ownership, insider/SAST and deals:
+${compactText([intelligence.shareholding, intelligence.sast, intelligence.bulkBlock].filter(Boolean).join("\n\n"))}
+
+Document search:
+${compactText(intelligence.documents)}
+
+Committee use:
+Treat Trendlyne data as source evidence, not an automatic buy/sell signal. Verify primary filings before position sizing.`;
+}
+
+function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  const dvmDurability = scoreFromDvm(record.dvmDurability, company.scores.businessQuality);
+  const dvmValuation = scoreFromDvm(record.dvmValuation, company.scores.valuation);
+  const dvmMomentum = scoreFromDvm(record.dvmMomentum, company.scores.industryTailwinds);
+  const roce = asNumber(record.roce);
+  const roe = asNumber(record.roe);
+  const debt = Number(record.debtEquity);
+  const financialStrength = clampScore(
+    [
+      roce >= 20 ? 8 : roce >= 12 ? 6 : roce > 0 ? 4 : company.scores.financialStrength,
+      roe >= 18 ? 8 : roe >= 12 ? 6 : roe > 0 ? 4 : company.scores.financialStrength,
+      Number.isFinite(debt) ? (debt <= 0.5 ? 8 : debt <= 1 ? 6 : 4) : company.scores.financialStrength
+    ].reduce((sum, item) => sum + item, 0) / 3
+  );
+  const trendlyneDocuments: Company["documents"] = [
+    { name: "Trendlyne overview and DVM", type: "Other", status: "Key Source" },
+    { name: "Trendlyne ownership and SAST", type: "Exchange Filing", status: "Key Source" },
+    { name: "Trendlyne document search", type: "Other", status: "To Review" }
+  ];
+  const trendlyneCatalysts: Company["catalysts"] = [];
+  if (hasMeaningfulText(intelligence.news)) {
+    trendlyneCatalysts.push({
+      title: "Trendlyne news and announcements review",
+      date: "",
+      status: "In Progress",
+      notes: compactText(intelligence.news, 260)
+    });
+  }
+  if (hasMeaningfulText(intelligence.events)) {
+    trendlyneCatalysts.push({
+      title: "Trendlyne corporate events review",
+      date: "",
+      status: "Expected",
+      notes: compactText(intelligence.events, 260)
+    });
+  }
+  const trendlyneRisks: Company["risks"] = [];
+  if (/below|negative|weak|volatility/i.test(intelligence.technical)) {
+    trendlyneRisks.push({
+      title: "Trendlyne technical weakness",
+      probability: "Medium",
+      impact: "Medium",
+      mitigation: compactText(intelligence.technical, 220)
+    });
+  }
+  if (/pledge|disposal|sell|sast|insider/i.test(intelligence.sast)) {
+    trendlyneRisks.push({
+      title: "Trendlyne insider/SAST watch",
+      probability: "Medium",
+      impact: "High",
+      mitigation: compactText(intelligence.sast, 220)
+    });
+  }
+
+  return {
+    ...company,
+    status: company.status === "Watchlist" ? "Researching" : company.status,
+    dataSource: `${company.dataSource || "Company search"} + Trendlyne MCP (${new Date(intelligence.importedAt).toISOString().slice(0, 10)})`,
+    businessSummary: company.businessSummary || compactText(intelligence.overview, 350),
+    industryOpportunity: company.industryOpportunity || compactText(intelligence.news || intelligence.events, 350),
+    managementAssessment: company.managementAssessment || compactText(intelligence.sast || intelligence.documents, 350),
+    aiOutput: trendlyneResearchBrief(company, record, intelligence),
+    documents: mergeDocuments(company.documents, trendlyneDocuments),
+    catalysts: mergeCatalysts(company.catalysts, trendlyneCatalysts),
+    risks: mergeRisks(company.risks, trendlyneRisks),
+    scores: {
+      ...company.scores,
+      businessQuality: dvmDurability,
+      financialStrength,
+      valuation: dvmValuation,
+      industryTailwinds: dvmMomentum,
+      cashFlowQuality: record.cfo ? clampScore(financialStrength + 1) : company.scores.cashFlowQuality,
+      governance: trendlyneRisks.some((risk) => risk.title.includes("insider")) ? Math.min(company.scores.governance, 5) : company.scores.governance,
+      riskReward: clampScore((dvmValuation + dvmDurability + financialStrength) / 3)
+    }
+  };
+}
+
 function asNumber(value: string) {
   return Number(value) || 0;
 }
@@ -1305,7 +1484,9 @@ export default function Home() {
         companies: current.companies.map((item) => {
           const matchesTicker = item.ticker.toUpperCase() === company.ticker.toUpperCase();
           const matchesName = normalizeKey(record.companyName).includes(normalizeKey(item.name));
-          return matchesTicker || matchesName ? applyFundamentals(item, record) : item;
+          if (!matchesTicker && !matchesName) return item;
+          const withFundamentals = applyFundamentals(item, record);
+          return intelligence ? enrichWithTrendlyne(withFundamentals, record, intelligence) : withFundamentals;
         })
       }));
       setSelectedId(company.id);
