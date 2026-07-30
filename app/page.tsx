@@ -264,15 +264,15 @@ const starterCompanies: CompanySearchResult[] = [
     ticker: "CDSL",
     exchange: "NSE",
     sector: "Capital Markets",
-    marketCap: "33900",
-    currentPrice: "1620",
-    pe: "62",
-    roe: "29",
-    roce: "38",
-    salesGrowth: "31",
-    profitGrowth: "35",
-    debtEquity: "0",
-    promoterHolding: "15",
+    marketCap: "",
+    currentPrice: "",
+    pe: "",
+    roe: "",
+    roce: "",
+    salesGrowth: "",
+    profitGrowth: "",
+    debtEquity: "",
+    promoterHolding: "",
     note: "Depository infrastructure and capital-market participation play."
   },
   {
@@ -280,15 +280,15 @@ const starterCompanies: CompanySearchResult[] = [
     ticker: "DIXON",
     exchange: "NSE",
     sector: "Electronics Manufacturing Services",
-    marketCap: "84000",
-    currentPrice: "13900",
-    pe: "108",
-    roe: "23",
-    roce: "28",
-    salesGrowth: "36",
-    profitGrowth: "42",
-    debtEquity: "0.25",
-    promoterHolding: "33",
+    marketCap: "",
+    currentPrice: "",
+    pe: "",
+    roe: "",
+    roce: "",
+    salesGrowth: "",
+    profitGrowth: "",
+    debtEquity: "",
+    promoterHolding: "",
     note: "EMS scale, import substitution and manufacturing outsourcing theme."
   },
   {
@@ -296,15 +296,15 @@ const starterCompanies: CompanySearchResult[] = [
     ticker: "HAL",
     exchange: "NSE",
     sector: "Defence Aerospace",
-    marketCap: "330000",
-    currentPrice: "4930",
-    pe: "40",
-    roe: "27",
-    roce: "34",
-    salesGrowth: "15",
-    profitGrowth: "26",
-    debtEquity: "0",
-    promoterHolding: "71",
+    marketCap: "",
+    currentPrice: "",
+    pe: "",
+    roe: "",
+    roce: "",
+    salesGrowth: "",
+    profitGrowth: "",
+    debtEquity: "",
+    promoterHolding: "",
     note: "Defence order book and domestic aerospace capability compounder."
   },
   {
@@ -312,15 +312,15 @@ const starterCompanies: CompanySearchResult[] = [
     ticker: "TRENT",
     exchange: "NSE",
     sector: "Retail",
-    marketCap: "195000",
-    currentPrice: "5480",
-    pe: "135",
-    roe: "27",
-    roce: "31",
-    salesGrowth: "48",
-    profitGrowth: "72",
-    debtEquity: "0.32",
-    promoterHolding: "37",
+    marketCap: "",
+    currentPrice: "",
+    pe: "",
+    roe: "",
+    roce: "",
+    salesGrowth: "",
+    profitGrowth: "",
+    debtEquity: "",
+    promoterHolding: "",
     note: "Retail format execution, Zudio growth and operating leverage story."
   },
   {
@@ -328,15 +328,15 @@ const starterCompanies: CompanySearchResult[] = [
     ticker: "KAYNES",
     exchange: "NSE",
     sector: "Electronics Manufacturing Services",
-    marketCap: "36000",
-    currentPrice: "5650",
-    pe: "95",
-    roe: "16",
-    roce: "19",
-    salesGrowth: "55",
-    profitGrowth: "65",
-    debtEquity: "0.1",
-    promoterHolding: "57",
+    marketCap: "",
+    currentPrice: "",
+    pe: "",
+    roe: "",
+    roce: "",
+    salesGrowth: "",
+    profitGrowth: "",
+    debtEquity: "",
+    promoterHolding: "",
     note: "High-growth EMS and industrial electronics platform."
   },
   {
@@ -344,15 +344,15 @@ const starterCompanies: CompanySearchResult[] = [
     ticker: "KPITTECH",
     exchange: "NSE",
     sector: "Auto Software",
-    marketCap: "40000",
-    currentPrice: "1460",
-    pe: "55",
-    roe: "27",
-    roce: "33",
-    salesGrowth: "32",
-    profitGrowth: "41",
-    debtEquity: "0",
-    promoterHolding: "40",
+    marketCap: "",
+    currentPrice: "",
+    pe: "",
+    roe: "",
+    roce: "",
+    salesGrowth: "",
+    profitGrowth: "",
+    debtEquity: "",
+    promoterHolding: "",
     note: "Software-defined vehicle and automotive engineering services specialist."
   }
 ];
@@ -1233,6 +1233,118 @@ function nl2br(value: string) {
   return escapeHtml(value).replace(/\r?\n/g, "<br />");
 }
 
+function looksLikeMarkdown(value: string) {
+  return /^#{1,3}\s|\n#{1,3}\s|\*\*[^*\n]+\*\*|\n\s*[-*]\s|\n\|\s?[^\n|]+\|/.test(value);
+}
+
+function inlineMarkdownHtml(value: string) {
+  return escapeHtml(value).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function markdownTableHtml(lines: string[]) {
+  const rows = lines
+    .map((line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim()))
+    .filter((cells) => !cells.every((cell) => /^[-: ]*$/.test(cell)));
+  if (!rows.length) return "";
+  return `<table>${rows
+    .map((cells, index) => {
+      const tag = index === 0 ? "th" : "td";
+      return `<tr>${cells.map((cell) => `<${tag}>${inlineMarkdownHtml(cell)}</${tag}>`).join("")}</tr>`;
+    })
+    .join("")}</table>`;
+}
+
+function markdownToHtml(markdown: string) {
+  const lines = markdown.split(/\r?\n/);
+  const body: string[] = [];
+  let paragraph: string[] = [];
+  let bullets: string[] = [];
+  let ordered: string[] = [];
+  let index = 0;
+
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      body.push(`<p>${inlineMarkdownHtml(paragraph.join(" "))}</p>`);
+      paragraph = [];
+    }
+  };
+  const flushLists = () => {
+    if (bullets.length) {
+      body.push(`<ul>${bullets.map((item) => `<li>${inlineMarkdownHtml(item)}</li>`).join("")}</ul>`);
+      bullets = [];
+    }
+    if (ordered.length) {
+      body.push(`<ol>${ordered.map((item) => `<li>${inlineMarkdownHtml(item)}</li>`).join("")}</ol>`);
+      ordered = [];
+    }
+  };
+
+  while (index < lines.length) {
+    const line = lines[index].trim();
+
+    if (!line) {
+      flushParagraph();
+      flushLists();
+      index += 1;
+      continue;
+    }
+
+    if (line.startsWith("|")) {
+      flushParagraph();
+      flushLists();
+      const tableLines: string[] = [];
+      while (index < lines.length && lines[index].trim().startsWith("|")) {
+        tableLines.push(lines[index]);
+        index += 1;
+      }
+      body.push(markdownTableHtml(tableLines));
+      continue;
+    }
+
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (heading) {
+      flushParagraph();
+      flushLists();
+      const level = heading[1].length;
+      body.push(`<h${level + 1} class="md-h${level}">${inlineMarkdownHtml(heading[2])}</h${level + 1}>`);
+      index += 1;
+      continue;
+    }
+
+    const bullet = /^[-*]\s+(.*)$/.exec(line);
+    if (bullet) {
+      flushParagraph();
+      ordered = [];
+      bullets.push(bullet[1]);
+      index += 1;
+      continue;
+    }
+
+    const numbered = /^\d+\.\s+(.*)$/.exec(line);
+    if (numbered) {
+      flushParagraph();
+      bullets = [];
+      ordered.push(numbered[1]);
+      index += 1;
+      continue;
+    }
+
+    flushLists();
+    paragraph.push(line);
+    index += 1;
+  }
+
+  flushParagraph();
+  flushLists();
+  return body.join("\n");
+}
+
+function reportBodyHtml(reportText: string) {
+  return looksLikeMarkdown(reportText)
+    ? `<div class="report-body">${markdownToHtml(reportText)}</div>`
+    : `<div class="memo">${nl2br(reportText)}</div>`;
+}
+
 function printableTable(rows: Array<[string, string | number]>) {
   return `<table>${rows
     .map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value || "-")}</td></tr>`)
@@ -1303,6 +1415,12 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
     .stat span { display: block; color: #667670; font-size: 12px; }
     .stat strong { display: block; margin-top: 6px; font-size: 18px; }
     .memo { white-space: pre-wrap; }
+    .report-body h2.md-h1 { font-size: 22px; color: #06251b; margin: 14px 0 8px; }
+    .report-body h3.md-h2 { font-size: 17px; color: #0c634b; margin: 14px 0 6px; }
+    .report-body h4.md-h3 { font-size: 14px; color: #12352b; margin: 10px 0 5px; }
+    .report-body table th { width: auto; background: #dff2ea; color: #06251b; text-transform: none; font-size: 13px; }
+    .report-body table th, .report-body table td { border: 1px solid #c6d8d0; }
+    .report-body ul, .report-body ol { margin: 6px 0 10px; }
     .disclaimer { color: #667670; font-size: 12px; }
     @media print {
       button { display: none; }
@@ -1325,7 +1443,7 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
     <div class="stat"><span>Market cap</span><strong>INR ${escapeHtml(company.marketCap || "-")} cr</strong></div>
   </div>
 
-  ${printableSection("Stock research report", `<div class="memo">${nl2br(reportText)}</div>`)}
+  ${printableSection("Stock research report", reportBodyHtml(reportText))}
   ${printableSection("Financial snapshot", printableTable(financialRows))}
   ${printableSection("Ownership", printableList(ownershipLines(company, record)))}
   ${noteRows.length ? printableSection("Saved analyst notes", printableTable(noteRows)) : ""}
@@ -1626,43 +1744,6 @@ Strict rules:
 - Do not output Trap probability 100/100 or Multibagger probability 100/100. Use calibrated 5-95 ranges and withhold verdict when P0 data checks fail.
 - Do not repeat raw payloads, headers, OCR fragments or truncated table dumps in the final report. Summarize only clean evidence and put messy source output under Needs Verification.
 - Separate facts from assumptions and do not give a buy/sell recommendation unless the evidence is sufficient.`;
-}
-
-function buildValuationCases(company: Company, record: FundamentalsRecord) {
-  const currentPrice = asNumber(record.currentPrice) || asNumber(company.financials.currentPrice);
-  const currentPe = usablePe(company, record);
-  const reportedEps = asNumber(record.eps) || asNumber(company.financials.eps);
-  const marketImpliedEps = currentPrice && currentPe ? currentPrice / currentPe : 0;
-  const epsMismatch =
-    Boolean(marketImpliedEps && reportedEps) && Math.abs(reportedEps - marketImpliedEps) / marketImpliedEps > 0.35;
-  const currentEps = epsMismatch ? marketImpliedEps : reportedEps || marketImpliedEps;
-  const salesGrowth = asNumber(record.salesGrowth) || asNumber(company.financials.salesGrowth) || 10;
-  const profitGrowth = asNumber(record.profitGrowth) || asNumber(company.financials.profitGrowth) || salesGrowth;
-  const roe = asNumber(record.roe) || asNumber(company.financials.roe);
-  const roce = asNumber(record.roce) || asNumber(company.financials.roce);
-  const dvmMomentum = asNumber(record.dvmMomentum) || asNumber(company.financials.dvmMomentum);
-  const dvmValuation = asNumber(record.dvmValuation) || asNumber(company.financials.dvmValuation);
-  const weakQuality = (roe > 0 && roe < 12) || (roce > 0 && roce < 12);
-  const negativeProfit = profitGrowth < 0;
-  const weakMomentum = dvmMomentum > 0 && dvmMomentum < 45;
-  const valuationNotCheap = dvmValuation > 0 && dvmValuation < 55;
-  const growthPenalty = [negativeProfit, weakQuality, weakMomentum].filter(Boolean).length;
-  const baseGrowth = negativeProfit ? Math.max(-5, Math.min(6, salesGrowth / 5)) : Math.max(0, Math.min(14, profitGrowth || salesGrowth / 2));
-  const bearGrowth = Math.max(-10, Math.min(baseGrowth - 5, negativeProfit ? -5 : salesGrowth / 3));
-  const bullGrowthCap = growthPenalty >= 2 ? 10 : growthPenalty === 1 ? 14 : 18;
-  const bullGrowth = Math.max(baseGrowth + 3, Math.min(bullGrowthCap, Math.max(salesGrowth / 2, profitGrowth) + 3));
-  const basePe = currentPe > 0 ? currentPe : 20;
-  const multipleCap = valuationNotCheap ? { bear: 30, base: 45, bull: 60 } : { bear: 35, base: 55, bull: 70 };
-  const bearPe = Math.max(8, Math.min(multipleCap.bear, Math.round(basePe * (valuationNotCheap ? 0.45 : 0.6))));
-  const baseExitPe = Math.max(8, Math.min(multipleCap.base, Math.round(basePe * (valuationNotCheap ? 0.65 : 0.9))));
-  const bullPe = Math.max(baseExitPe, Math.min(multipleCap.bull, Math.round(basePe * (valuationNotCheap || weakQuality ? 0.8 : 1.05))));
-  const projectEps = (growth: number) => (currentEps ? formatNumber(currentEps * Math.pow(1 + growth / 100, 5)) : "");
-
-  return {
-    bear: { revenueGrowth: formatNumber(bearGrowth, 1), eps: projectEps(bearGrowth), pe: String(bearPe), probability: "30" },
-    base: { revenueGrowth: formatNumber(baseGrowth, 1), eps: projectEps(baseGrowth), pe: String(baseExitPe), probability: "50" },
-    bull: { revenueGrowth: formatNumber(bullGrowth, 1), eps: projectEps(bullGrowth), pe: String(bullPe), probability: "20" }
-  };
 }
 
 function buildResearchReview(record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
@@ -2053,16 +2134,11 @@ function packetSafeText(value: string) {
 }
 
 function buildReportBriefForPacket(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
-  const diagnostics = investmentDiagnostics(company, record, intelligence);
   const review = dataQualityReview(company, record, intelligence);
   const framework = isMegaCapCompany(company, record) ? "Large-cap compounder/re-rating lens" : "Multibagger and trap-risk lens";
 
   return {
     framework,
-    preliminaryVerdict: diagnostics.finalVerdict,
-    convictionScore: score(company),
-    multibaggerProbability: diagnostics.multibaggerProbability,
-    trapProbability: diagnostics.trapProbability,
     dataQualityGate: review.p0.length ? "failed" : "passed first-level checks",
     analystFocus: [
       "Explain the actual business model, revenue drivers, customers/end-markets, segment economics and competitive position.",
@@ -2139,16 +2215,6 @@ function buildCleanCodexResearchPacket(
           staleFinancials: review.staleFinancials,
           conglomerateNeedsSegments: review.conglomerateNeedsSegments
         }
-      },
-      diagnostics: {
-        preliminaryVerdict: diagnostics.finalVerdict,
-        multibaggerProbability: diagnostics.multibaggerProbability,
-        trapProbability: diagnostics.trapProbability,
-        weakReturns: diagnostics.weakReturns,
-        negativeProfit: diagnostics.negativeProfit,
-        expensive: diagnostics.expensive,
-        weakMomentum: diagnostics.weakMomentum,
-        severeRiskCount: diagnostics.severeRisks
       }
     },
     financialMetrics: buildMetricsForPacket(company, fundamentalsRecord),
@@ -2175,12 +2241,26 @@ function buildCleanCodexResearchPacket(
     })),
     documents: company.documents,
     quarterlyReviews: company.reviews,
-    scorecard: (Object.entries(scoreLabels) as Array<[ScoreKey, string]>).map(([key, label]) => ({
-      label,
-      score: company.scores[key],
-      max: 10
-    })),
-    valuation: buildValuationForPacket(company, fundamentalsRecord),
+    legacyAppHeuristics: {
+      warning:
+        "Mechanical app-generated heuristics kept only for transparency. These are NOT evidence and must NOT anchor the final report. The analyst's own dynamic judgment replaces every number and verdict in this block.",
+      diagnostics: {
+        preliminaryVerdict: diagnostics.finalVerdict,
+        multibaggerProbability: diagnostics.multibaggerProbability,
+        trapProbability: diagnostics.trapProbability,
+        weakReturns: diagnostics.weakReturns,
+        negativeProfit: diagnostics.negativeProfit,
+        expensive: diagnostics.expensive,
+        weakMomentum: diagnostics.weakMomentum,
+        severeRiskCount: diagnostics.severeRisks
+      },
+      scorecard: (Object.entries(scoreLabels) as Array<[ScoreKey, string]>).map(([key, label]) => ({
+        label,
+        score: company.scores[key],
+        max: 10
+      })),
+      valuationScenarios: buildValuationForPacket(company, fundamentalsRecord)
+    },
     appReferenceDraft:
       "Do not treat this as the final report. Use it only as a checklist of issues the final stock-only report should consider.",
     cleanedDraft: buildInvestmentReportText(company, fundamentalsRecord, trendlyneIntel)
@@ -2429,7 +2509,6 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
       notes: `DVM momentum is ${record.dvmMomentum}. Watch for price strength and improving result commentary before upgrading.`
     });
   }
-  const valuation = buildValuationCases(company, record);
   const qualityPenalty = review.p0.length ? Math.min(3, review.p0.length) : 0;
   const aiOutputCompany = {
     ...company,
@@ -2453,7 +2532,6 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
     catalysts: mergeCatalysts(company.catalysts, trendlyneCatalysts),
     risks: mergeRisks(company.risks, trendlyneRisks),
     reviews: mergeReviews(company.reviews, [buildResearchReview(record, intelligence)]),
-    valuation,
     scores: {
       ...company.scores,
       businessQuality: dvmDurability,
@@ -3050,7 +3128,7 @@ export default function Home() {
 
   function applyFundamentals(company: Company, record?: FundamentalsRecord) {
     if (!record) return company;
-    const priceForPe = asNumber(company.financials.currentPrice) || asNumber(record.currentPrice);
+    const priceForPe = asNumber(record.currentPrice) || asNumber(company.financials.currentPrice);
     const eps = asNumber(record.eps);
     const recordPe = asNumber(record.pe);
     const impliedEps = !eps && priceForPe && recordPe ? formatNumber(priceForPe / recordPe) : "";
@@ -3076,7 +3154,7 @@ export default function Home() {
         profitGrowth: record.profitGrowth || company.financials.profitGrowth,
         opm: record.opm || company.financials.opm,
         cfo: record.cfo || company.financials.cfo,
-        currentPrice: company.financials.currentPrice || record.currentPrice,
+        currentPrice: record.currentPrice || company.financials.currentPrice,
         dvmDurability: record.dvmDurability || company.financials.dvmDurability,
         dvmValuation: record.dvmValuation || company.financials.dvmValuation,
         dvmMomentum: record.dvmMomentum || company.financials.dvmMomentum,
@@ -3355,6 +3433,35 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
+  function exportWorkspaceBackup() {
+    downloadJson(`IMRS-Workspace-Backup-${new Date().toISOString().slice(0, 10)}.json`, data);
+  }
+
+  async function importWorkspaceBackup(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse((await file.text()).replace(/^\uFEFF/, "")) as Partial<AppData>;
+      if (!Array.isArray(parsed.companies)) throw new Error("This file is not an IMRS workspace backup.");
+      const companies = parsed.companies.map(normalizeCompany);
+      setData({
+        companies: companies.length ? companies : [demoCompany()],
+        portfolio: parsed.portfolio || [],
+        fundamentals: parsed.fundamentals || {},
+        shareholding: parsed.shareholding || {},
+        trendlyne: parsed.trendlyne || {}
+      });
+      setSelectedId(companies[0]?.id || "");
+      setActivePage("dashboard");
+      window.alert(`Restored workspace backup with ${companies.length} companies.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not restore this workspace backup.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   function exportCodexResearchPacket() {
     if (!selected) return;
     const fundamentalsRecord = findFundamentals(selected.ticker, selected.name);
@@ -3369,14 +3476,15 @@ export default function Home() {
   }
 
   function reportContentFromPayload(text: string, fallbackTitle: string) {
+    const cleanText = text.replace(/^\uFEFF/, "");
     let title = fallbackTitle;
-    let content = text;
+    let content = cleanText;
     let format = fallbackTitle.split(".").pop()?.toLowerCase() || "txt";
 
     if (format === "json") {
-      const parsed = JSON.parse(text) as CodexReportPayload;
+      const parsed = JSON.parse(cleanText) as CodexReportPayload;
       title = parsed.title || fallbackTitle.replace(/\.[^.]+$/, "");
-      content = parsed.report || parsed.markdown || parsed.content || text;
+      content = parsed.report || parsed.markdown || parsed.content || cleanText;
       format = "json";
     } else {
       title = fallbackTitle.replace(/\.[^.]+$/, "");
@@ -3657,6 +3765,19 @@ export default function Home() {
             </div>
             <div className="note">
               No portfolio tracker, committee simulator or redundant scoring screens. IMRS is now a clean evidence-to-report workspace.
+            </div>
+            <div className="side-title">Workspace safety</div>
+            <div className="toolbar">
+              <button className="secondary" onClick={exportWorkspaceBackup}>
+                <Download size={17} /> Backup data
+              </button>
+              <label className="secondary file-button">
+                <Upload size={17} /> Restore backup
+                <input type="file" accept=".json" onChange={importWorkspaceBackup} />
+              </label>
+            </div>
+            <div className="note">
+              All research is saved only in this browser. Download a backup regularly; restoring replaces the current workspace.
             </div>
           </aside>
         </div>

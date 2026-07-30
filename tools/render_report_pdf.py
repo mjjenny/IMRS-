@@ -114,7 +114,7 @@ tr {
 
 
 def load_markdown(path: Path) -> tuple[str, str]:
-  text = path.read_text(encoding="utf-8")
+  text = path.read_text(encoding="utf-8-sig")
   if path.suffix.lower() == ".json":
     payload = json.loads(text)
     title = str(payload.get("title") or "IMRS Institutional Stock Research Report")
