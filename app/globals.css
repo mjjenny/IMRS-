@@ -226,9 +226,7 @@ textarea {
 .hero,
 .footer-actions,
 .result-card,
-.doc-card,
-.agent-card,
-.portfolio-row {
+.doc-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -261,10 +259,7 @@ textarea {
 .stats,
 .grid-2,
 .grid-3,
-.score-grid,
-.portfolio-grid,
-.committee-grid,
-.screen-grid {
+.portfolio-grid {
   display: grid;
   gap: 13px;
 }
@@ -325,9 +320,7 @@ textarea {
   padding: 7px 10px;
 }
 
-.grid-2,
-.score-grid,
-.committee-grid {
+.grid-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -337,10 +330,6 @@ textarea {
 
 .portfolio-grid {
   grid-template-columns: 1.2fr 0.8fr;
-}
-
-.screen-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .panel,
@@ -405,11 +394,6 @@ textarea {
   color: #ffffff;
 }
 
-.soft {
-  background: #e4ece9;
-  color: #263a34;
-}
-
 .table-wrap {
   overflow: auto;
 }
@@ -456,17 +440,6 @@ td small {
   font-weight: 800;
 }
 
-.score {
-  width: 39px;
-  height: 39px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: #0c634b;
-  font-weight: 900;
-}
-
 .hero {
   padding: 18px;
 }
@@ -489,26 +462,6 @@ td small {
   grid-template-columns: 0.7fr 1.4fr 1fr 1fr;
   gap: 8px;
   margin-top: 12px;
-}
-
-.hero-score {
-  min-width: 150px;
-  border-radius: 8px;
-  padding: 13px;
-  background: var(--dark);
-  color: #ffffff;
-  text-align: center;
-}
-
-.hero-score span,
-.hero-score small {
-  display: block;
-  color: #a4b4ae;
-}
-
-.hero-score strong {
-  display: block;
-  font-size: 40px;
 }
 
 .tabs {
@@ -538,41 +491,14 @@ td small {
   gap: 9px;
 }
 
-.form-row {
-  display: grid;
-  grid-template-columns: 1.2fr 0.65fr 0.65fr 1.4fr auto;
-  gap: 8px;
-}
-
-.review-head {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
-}
-
-.score-item > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.score-item input {
-  margin-top: 17px;
-  accent-color: var(--accent);
-}
-
-.financial-card label,
-.valuation-card label,
-.screen-grid label {
+.financial-card label {
   display: block;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
 }
 
-.financial-card input,
-.valuation-card input,
-.screen-grid input {
+.financial-card input {
   margin-top: 6px;
 }
 
@@ -624,59 +550,18 @@ td small {
 }
 
 .result-card,
-.doc-card,
-.intel-card,
-.agent-card,
-.portfolio-row {
+.doc-card {
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
 }
 
-.intel-card h3 {
-  margin-top: 0;
-}
-
-.intel-card pre {
-  max-height: 260px;
-  overflow: auto;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
 .result-card small,
-.doc-card small,
-.agent-card small {
+.doc-card small {
   display: block;
   margin-top: 3px;
   color: var(--muted);
-}
-
-.agent-badge {
-  min-width: 105px;
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: #0c634b;
-  font-size: 11px;
-  font-weight: 900;
-  text-align: center;
-}
-
-.weighted {
-  margin-top: 13px;
-  text-align: center;
-}
-
-.weighted strong {
-  display: block;
-  font-size: 38px;
 }
 
 .report-stack {
@@ -711,29 +596,10 @@ td small {
   line-height: 1.5;
 }
 
-.danger-list {
-  color: #7a3030;
-}
-
 .report-output {
   min-height: 520px;
   white-space: pre-wrap;
   line-height: 1.5;
-}
-
-.implied {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.implied span,
-.implied strong {
-  display: block;
-}
-
-.implied strong {
-  font-size: 26px;
 }
 
 .footer-actions {
@@ -814,36 +680,8 @@ td small {
     flex-direction: column;
   }
 
-  .grid-2,
-  .score-grid,
-  .committee-grid {
+  .grid-2 {
     grid-template-columns: 1fr;
-  }
-
-  .hero-score {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-
-  .hero-score span,
-  .hero-score small {
-    display: inline;
-  }
-
-  .hero-score strong {
-    font-size: 29px;
-  }
-
-  .form-row,
-  .review-head {
-    grid-template-columns: 1fr;
-  }
-
-  .screen-grid {
-    grid-template-columns: repeat(2, 1fr);
   }
 
   .nav {

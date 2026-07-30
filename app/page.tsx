@@ -242,19 +242,8 @@ type CompanySearchResult = {
   source?: string;
 };
 
-type PageId = "dashboard" | "search" | "screener" | "watchlist" | "portfolio" | "committee" | "research" | "kite" | "fundamentals";
-type TabId =
-  | "overview"
-  | "financials"
-  | "scorecard"
-  | "report"
-  | "thesis"
-  | "risks"
-  | "catalysts"
-  | "documents"
-  | "ai"
-  | "reviews"
-  | "valuation";
+type PageId = "dashboard" | "search" | "fundamentals" | "research" | "kite";
+type TabId = "overview" | "financials" | "report" | "documents";
 
 const scoreLabels: Record<ScoreKey, string> = {
   businessQuality: "Business quality",
@@ -1267,30 +1256,34 @@ function printableSection(title: string, body: string) {
 
 function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIntelligenceRecord, record?: FundamentalsRecord) {
   const f = company.financials;
-  const diagnostics = investmentDiagnostics(company, record, trendlyneIntel);
-  const review = dataQualityReview(company, record, trendlyneIntel);
-  const bullets = getReportBullets(company, record);
   const generatedAt = new Date().toLocaleString("en-IN");
   const reportText =
     company.codexReports?.[0]?.content ||
     scrubReportText(company.aiOutput) ||
     "No final stock research report has been imported for this company yet.";
-  const sanity = sanityCheckItems(company, record, trendlyneIntel);
-  const needsVerification = needsVerificationItems(company, record, trendlyneIntel);
-  const cfoDisplay = validatedMetric(company, record, "cfo", "INR crore");
-  const valuationRows: Array<[string, string]> = (["bear", "base", "bull"] as const).map((caseName) => {
-    const scenario = company.valuation[caseName];
-    return [
-      `${caseName.toUpperCase()} case`,
-      `EPS CAGR ${scenario.revenueGrowth || "-"}%; Future EPS INR ${scenario.eps || "-"}; Exit P/E ${
-        scenario.pe || "-"
-      }; Probability ${scenario.probability || "-"}%; Implied price ${valuationPriceText(company, scenario, record)}`
-    ];
-  });
-
-  const scoreRows = (Object.entries(scoreLabels) as Array<[ScoreKey, string]>).map(
-    ([key, label]) => [label, `${company.scores[key]}/10`] as [string, string]
-  );
+  const financialRows: Array<[string, string]> = [
+    ["Revenue", validatedMetric(company, record, "revenue", "INR crore")],
+    ["Net profit", validatedMetric(company, record, "profit", "INR crore")],
+    ["EPS", validatedMetric(company, record, "eps", "INR")],
+    ["P/E", validatedMetric(company, record, "pe", "x")],
+    ["ROE", validatedMetric(company, record, "roe", "%")],
+    ["ROCE", validatedMetric(company, record, "roce", "%")],
+    ["Debt/Equity", validatedMetric(company, record, "debtEquity", "x")],
+    ["Sales growth", validatedMetric(company, record, "salesGrowth", "%")],
+    ["Profit growth", validatedMetric(company, record, "profitGrowth", "%")],
+    ["Operating margin / margin evidence", marginEvidenceText(company, record)],
+    ["Operating cash flow", validatedMetric(company, record, "cfo", "INR crore")],
+    ["Current price", validatedMetric(company, record, "currentPrice", "INR")],
+    ["Durability score", f.dvmDurability || "N/A"],
+    ["Valuation score", f.dvmValuation || "N/A"],
+    ["Momentum score", f.dvmMomentum || "N/A"],
+    ["Analyst score", f.analystScore || "N/A"]
+  ];
+  const noteRows = [
+    company.businessSummary ? ["Business summary", readerSafeText(company.businessSummary)] : null,
+    company.industryOpportunity ? ["Industry opportunity", readerSafeText(company.industryOpportunity)] : null,
+    company.managementAssessment ? ["Management assessment", readerSafeText(company.managementAssessment)] : null
+  ].filter(Boolean) as Array<[string, string]>;
 
   return `<!doctype html>
 <html>
@@ -1304,7 +1297,6 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
     header { border-bottom: 3px solid #137b5d; padding-bottom: 14px; margin-bottom: 18px; }
     h1 { margin: 0 0 6px; font-size: 30px; }
     h2 { margin: 0 0 10px; font-size: 18px; color: #0c634b; }
-    h3 { margin: 0 0 8px; font-size: 15px; }
     p { margin: 0 0 10px; }
     section { break-inside: avoid; border: 1px solid #d7e1dc; border-radius: 8px; padding: 14px; margin: 0 0 12px; }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; }
@@ -1313,15 +1305,15 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
     ul { margin: 8px 0 0; padding-left: 20px; }
     li { margin-bottom: 5px; }
     .meta { color: #667670; }
-    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
     .stat { border: 1px solid #d7e1dc; border-radius: 8px; padding: 12px; }
     .stat span { display: block; color: #667670; font-size: 12px; }
-    .stat strong { display: block; margin-top: 6px; font-size: 22px; }
+    .stat strong { display: block; margin-top: 6px; font-size: 18px; }
     .memo { white-space: pre-wrap; }
     .disclaimer { color: #667670; font-size: 12px; }
     @media print {
       button { display: none; }
-      .grid { grid-template-columns: repeat(4, 1fr); }
+      .grid { grid-template-columns: repeat(3, 1fr); }
     }
   </style>
 </head>
@@ -1335,84 +1327,23 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
   </header>
 
   <div class="grid">
-    <div class="stat"><span>Conviction</span><strong>${score(company)}/100</strong></div>
-    <div class="stat"><span>Multibagger probability</span><strong>${diagnostics.multibaggerProbability}/100</strong></div>
-    <div class="stat"><span>Trap probability</span><strong>${diagnostics.trapProbability}/100</strong></div>
-    <div class="stat"><span>Weighted scenario price</span><strong>${escapeHtml(weightedExpectedPriceText(company, record))}</strong></div>
+    <div class="stat"><span>Ticker</span><strong>${escapeHtml(company.ticker || "-")}</strong></div>
+    <div class="stat"><span>Sector</span><strong>${escapeHtml(company.sector || "-")}</strong></div>
+    <div class="stat"><span>Market cap</span><strong>INR ${escapeHtml(company.marketCap || "-")} cr</strong></div>
   </div>
 
-  ${printableSection("Executive verdict", `<p>${escapeHtml(diagnostics.finalVerdict)}</p>`)}
-  ${printableSection("Sanity check before verdict", printableList(sanity))}
+  ${printableSection("Stock research report", `<div class="memo">${nl2br(reportText)}</div>`)}
+  ${printableSection("Financial snapshot", printableTable(financialRows))}
+  ${printableSection("Ownership", printableList(ownershipLines(company, record)))}
+  ${noteRows.length ? printableSection("Saved analyst notes", printableTable(noteRows)) : ""}
   ${printableSection(
-    "Evidence confidence",
-    `<p>${
-      review.p0.length
-        ? `Low confidence: ${review.p0.length} critical evidence issue${review.p0.length > 1 ? "s" : ""}. Verdict and valuation are provisional until corrected.`
-        : "Passed first-level checks."
-    }</p>`
-  )}
-  ${printableSection("AI / analyst report", `<div class="memo">${nl2br(reportText)}</div>`)}
-  ${printableSection(
-    "Financials",
-    printableTable([
-      ["Revenue", validatedMetric(company, record, "revenue", "INR crore")],
-      ["Net profit", validatedMetric(company, record, "profit", "INR crore")],
-      ["EPS", validatedMetric(company, record, "eps", "INR")],
-      ["P/E", validatedMetric(company, record, "pe", "x")],
-      ["ROE", validatedMetric(company, record, "roe", "%")],
-      ["ROCE", validatedMetric(company, record, "roce", "%")],
-      ["Debt/Equity", validatedMetric(company, record, "debtEquity", "x")],
-      ["Sales growth", validatedMetric(company, record, "salesGrowth", "%")],
-      ["Profit growth", validatedMetric(company, record, "profitGrowth", "%")],
-      ["Operating margin / margin evidence", marginEvidenceText(company, record)],
-      ["Operating cash flow", cfoDisplay],
-      ["Current price INR", validatedMetric(company, record, "currentPrice", "INR")],
-      ["DVM durability", f.dvmDurability],
-      ["DVM valuation", f.dvmValuation],
-      ["DVM momentum", f.dvmMomentum],
-      ["Analyst score", f.analystScore || "N/A"]
-    ])
-  )}
-  ${printableSection(
-    "Ownership",
-    printableList(ownershipLines(company, record))
-  )}
-  ${printableSection(
-    "Segment analysis requirement",
-    `<p>${
-      review.conglomerateNeedsSegments
-        ? "Required before final verdict. Split O2C, Oil & Gas, Retail, Digital/Jio, New Energy and Others with revenue, EBITDA/margin, capex and YoY trend."
-        : "No mandatory conglomerate segment warning detected."
-    }</p>`
-  )}
-  ${printableSection("Scorecard", printableTable(scoreRows))}
-  ${printableSection("Valuation scenarios", printableTable([...valuationRows, ["Probability-weighted expected price", weightedExpectedPriceText(company, record)]]))}
-  ${printableSection("Business quality", `<p>${nl2br(savedResearchText(company.businessSummary, businessModelDraft(company, record)))}</p>`)}
-  ${printableSection(
-    "Growth runway and multibagger case",
-    `<p>${nl2br(
-      savedResearchText(
-        company.industryOpportunity || company.multibaggerCase,
-        `Industry exposure: ${inferredSector(company, record)}. Growth runway must be verified from order book, end-market demand, capacity additions, margin trajectory and management commentary.`
-      )
-    )}</p>`
-  )}
-  ${printableSection("Management assessment", `<p>${nl2br(savedResearchText(company.managementAssessment, "Management quality requires promoter, capital allocation, governance and auditor review."))}</p>`)}
-  ${printableSection("Bull thesis", `<p>${nl2br(savedResearchText(company.bullThesis, "Bull case requires verified growth, margin improvement, cash conversion and valuation support."))}</p>`)}
-  ${printableSection("Bear thesis", `<p>${nl2br(savedResearchText(company.bearThesis, "Bear case requires testing valuation, cash conversion, governance, cyclicality and execution risk."))}</p>`)}
-  ${printableSection("Key assumptions", `<p>${nl2br(savedResearchText(company.keyAssumptions, "Key assumptions need to be rebuilt from validated fundamentals and source-dated evidence."))}</p>`)}
-  ${printableSection("Thesis killers", `<p>${nl2br(savedResearchText(company.thesisKillers, "Thesis killers include source contradiction, weak cash conversion, governance concerns and failure of growth/margin assumptions."))}</p>`)}
-  ${printableSection("Needs verification", printableList(needsVerification))}
-  ${printableSection("What must happen for 5x/10x", printableList(bullets.fiveTen))}
-  ${printableSection("What would make this fail", printableList(bullets.fail))}
-  ${printableSection(
-    "Risk register",
+    "Recorded risks",
     meaningfulRisks(company).length
       ? printableTable(meaningfulRisks(company).map((risk) => [risk.title, `${risk.probability}/${risk.impact}. ${risk.mitigation}`]))
       : "<p>No risks recorded.</p>"
   )}
   ${printableSection(
-    "Catalysts",
+    "Recorded catalysts",
     meaningfulCatalysts(company).length
       ? printableTable(meaningfulCatalysts(company).map((catalyst) => [catalyst.title, `${catalyst.status}; ${catalyst.date || "No date"}. ${catalyst.notes}`]))
       : "<p>No catalysts recorded.</p>"
@@ -3004,7 +2935,6 @@ export default function Home() {
   const [trendlyneLoading, setTrendlyneLoading] = useState(false);
   const [syncingSymbol, setSyncingSymbol] = useState("");
   const [reportFetching, setReportFetching] = useState(false);
-  const [screen, setScreen] = useState({ roce: "15", growth: "15", debt: "1", pe: "50" });
 
   useEffect(() => {
     try {
@@ -3087,7 +3017,15 @@ export default function Home() {
   const filteredMini = data.companies.filter((company) =>
     `${company.name} ${company.ticker}`.toLowerCase().includes(sideQuery.toLowerCase())
   );
-  const ranked = useMemo(() => [...data.companies].sort((a, b) => score(b) - score(a)), [data.companies]);
+  const ranked = useMemo(
+    () =>
+      [...data.companies].sort((a, b) => {
+        const progressA = (a.codexReports?.length ? 2 : 0) + (a.dataSource ? 1 : 0);
+        const progressB = (b.codexReports?.length ? 2 : 0) + (b.dataSource ? 1 : 0);
+        return progressB - progressA || a.name.localeCompare(b.name);
+      }),
+    [data.companies]
+  );
 
   function saveCompany(next: Company) {
     setData((current) => ({
@@ -3692,44 +3630,6 @@ export default function Home() {
     saveCompany({ ...selected, financials: { ...selected.financials, [key]: value } });
   }
 
-  function updateScore(key: ScoreKey, value: string) {
-    if (!selected) return;
-    saveCompany({ ...selected, scores: { ...selected.scores, [key]: Number(value) } });
-  }
-
-  function updateValuation(caseName: keyof Company["valuation"], key: keyof ValuationCase, value: string) {
-    if (!selected) return;
-    saveCompany({
-      ...selected,
-      valuation: {
-        ...selected.valuation,
-        [caseName]: { ...selected.valuation[caseName], [key]: value }
-      }
-    });
-  }
-
-  function buildResearchFromSavedData() {
-    if (!selected) return;
-    const record = findFundamentals(selected.ticker, selected.name);
-    const intelligence = findTrendlyneIntelligence(selected.ticker, selected.name);
-    if (!record || !intelligence) {
-      window.alert("Sync Trendlyne Full first. IMRS needs both fundamentals and the intelligence pack to build the thesis.");
-      return;
-    }
-    const withFundamentals = applyFundamentals(selected, record);
-    saveCompany(enrichWithTrendlyne(withFundamentals, record, intelligence));
-    setActiveTab("report");
-    window.alert("Research report rebuilt from saved Trendlyne data.");
-  }
-
-  function generateStructuredAnalysis() {
-    if (!selected) return;
-    const record = findFundamentals(selected.ticker, selected.name);
-    const intelligence = findTrendlyneIntelligence(selected.ticker, selected.name);
-    updateSelected({ aiOutput: buildInvestmentReportText(selected, record, intelligence) });
-    setActiveTab("report");
-  }
-
   function exportSelectedReportPdf() {
     if (!selected) return;
     const trendlyneIntel = findTrendlyneIntelligence(selected.ticker, selected.name);
@@ -3755,36 +3655,36 @@ export default function Home() {
     const dataReady = companies.filter(
       (company) => Boolean(findFundamentals(company.ticker, company.name)) || Boolean(findTrendlyneIntelligence(company.ticker, company.name))
     ).length;
-    const watchlist = companies.filter((company) => company.watchlisted).length;
+    const selectedLabel = selected?.ticker || selected?.name || "-";
 
     return (
       <>
-        <PageHead eyebrow="Research cockpit" title="IMRS Data-to-Report Hub">
-          Import market and filing evidence, export a Codex research packet, then store the final institutional report.
+        <PageHead eyebrow="Research workflow" title="IMRS">
+          Collect evidence, hand it to Codex, then publish a stock-only research report.
         </PageHead>
         <div className="stats">
-          <Stat label="Companies tracked" value={companies.length} />
-          <Stat label="Data-ready records" value={dataReady} />
+          <Stat label="Companies" value={companies.length} />
+          <Stat label="Evidence ready" value={dataReady} />
           <Stat label="Final reports" value={reports} />
-          <Stat label="Watchlist" value={watchlist} />
+          <Stat label="Selected" value={selectedLabel} />
         </div>
         <section className="panel workflow-panel">
-          <span className="eyebrow">Core workflow</span>
+          <span className="eyebrow">Only what matters</span>
           <div className="workflow-grid">
             <article>
-              <strong>1. Find company</strong>
+              <strong>1. Search</strong>
               <p>Search by ticker or company name and create the record.</p>
             </article>
             <article>
-              <strong>2. Sync data</strong>
-              <p>Use the Data Hub to collect market, financial, ownership and event evidence.</p>
+              <strong>2. Sync</strong>
+              <p>Collect market, financial, ownership and filing evidence.</p>
             </article>
             <article>
-              <strong>3. Export packet</strong>
+              <strong>3. Export</strong>
               <p>Send the structured evidence packet to Codex for dynamic analysis.</p>
             </article>
             <article>
-              <strong>4. Import report</strong>
+              <strong>4. Publish</strong>
               <p>Store the finished stock-only report and export the PDF from IMRS.</p>
             </article>
           </div>
@@ -3803,16 +3703,15 @@ export default function Home() {
             <CompanyTable companies={ranked} openCompany={openCompany} />
           </section>
           <aside className="panel">
-            <span className="eyebrow">Current focus</span>
-            <h3>Simplified operating model</h3>
+            <span className="eyebrow">Operating model</span>
+            <h3>Website stays light</h3>
             <div className="kpi-list">
-              <Kpi label="Evidence collector" value="Website" />
-              <Kpi label="Research engine" value="Codex" />
-              <Kpi label="Reader output" value="Report" />
-              <Kpi label="Report body" value="Stock only" />
+              <Kpi label="Input" value="Market evidence" />
+              <Kpi label="Analysis" value="Codex" />
+              <Kpi label="Output" value="Report + PDF" />
             </div>
             <div className="note">
-              Redundant scoring, committee and portfolio surfaces are hidden so IMRS stays focused on collecting evidence and publishing the final report.
+              No portfolio tracker, committee simulator or redundant scoring screens. IMRS is now a clean evidence-to-report workspace.
             </div>
           </aside>
         </div>
@@ -3867,211 +3766,6 @@ export default function Home() {
           </div>
           <div className="info">{searchMessage}</div>
         </form>
-      </>
-    );
-  }
-
-  function renderScreener() {
-    const list = data.companies.filter(
-      (company) =>
-        asNumber(company.financials.roce) >= asNumber(screen.roce) &&
-        asNumber(company.financials.salesGrowth) >= asNumber(screen.growth) &&
-        (Number(company.financials.debtEquity) || 999) <= (Number(screen.debt) || 999) &&
-        (Number(company.financials.pe) || 999) <= (Number(screen.pe) || 999)
-    );
-
-    return (
-      <>
-        <PageHead eyebrow="Opportunity discovery" title="Company Screener">
-          Filter the companies already saved in IMRS using quality, growth and valuation criteria.
-        </PageHead>
-        <section className="panel">
-          <div className="screen-grid">
-            <label>
-              Minimum ROCE %
-              <input value={screen.roce} onChange={(event) => setScreen({ ...screen, roce: event.target.value })} type="number" />
-            </label>
-            <label>
-              Minimum sales growth %
-              <input value={screen.growth} onChange={(event) => setScreen({ ...screen, growth: event.target.value })} type="number" />
-            </label>
-            <label>
-              Maximum debt/equity
-              <input value={screen.debt} onChange={(event) => setScreen({ ...screen, debt: event.target.value })} type="number" />
-            </label>
-            <label>
-              Maximum P/E
-              <input value={screen.pe} onChange={(event) => setScreen({ ...screen, pe: event.target.value })} type="number" />
-            </label>
-          </div>
-          <div className="stack" style={{ marginTop: 14 }}>
-            {list.map((company) => (
-              <div className="result-card" key={company.id} onClick={() => openCompany(company.id)}>
-                <div>
-                  <strong>{company.name}</strong>
-                  <small>
-                    ROCE {company.financials.roce || "-"}% - Growth {company.financials.salesGrowth || "-"}% - D/E{" "}
-                    {company.financials.debtEquity || "-"} - P/E {company.financials.pe || "-"}
-                  </small>
-                </div>
-                <span className="score">{score(company)}</span>
-              </div>
-            ))}
-            {list.length === 0 ? <p>No saved companies match the current criteria.</p> : null}
-          </div>
-        </section>
-      </>
-    );
-  }
-
-  function renderWatchlist() {
-    const list = data.companies.filter((company) => company.watchlisted);
-    return (
-      <>
-        <PageHead eyebrow="Opportunity radar" title="Watchlist">
-          Maintain a focused list of companies requiring deeper work or a better entry valuation.
-        </PageHead>
-        <section className="panel">
-          <div className="section-head">
-            <h2>{list.length} companies</h2>
-            <button onClick={createCompany} title="Create company">
-              <Plus size={17} /> Company
-            </button>
-          </div>
-          <div className="stack">
-            {list.map((company) => (
-              <div className="result-card" key={company.id} onClick={() => openCompany(company.id)}>
-                <div>
-                  <strong>{company.name}</strong>
-                  <small>
-                    {company.ticker || "No ticker"} - {company.sector || "No sector"} - {company.status}
-                  </small>
-                </div>
-                <span className="score">{score(company)}</span>
-              </div>
-            ))}
-            {list.length === 0 ? <p>No companies in your watchlist.</p> : null}
-          </div>
-        </section>
-      </>
-    );
-  }
-
-  function renderPortfolio() {
-    const total = data.portfolio.reduce((sum, position) => sum + asNumber(position.quantity) * asNumber(position.currentPrice), 0);
-    const cost = data.portfolio.reduce((sum, position) => sum + asNumber(position.quantity) * asNumber(position.averagePrice), 0);
-    const pnl = total - cost;
-
-    function updatePosition(index: number, key: keyof PortfolioPosition, value: string) {
-      setData((current) => ({
-        ...current,
-        portfolio: current.portfolio.map((position, i) => (i === index ? { ...position, [key]: value } : position))
-      }));
-    }
-
-    return (
-      <>
-        <PageHead eyebrow="Capital allocation" title="Portfolio">
-          Track position size, cost, current value and concentration.
-        </PageHead>
-        <div className="stats">
-          <Stat label="Invested value" value={`INR ${Math.round(cost).toLocaleString("en-IN")}`} />
-          <Stat label="Current value" value={`INR ${Math.round(total).toLocaleString("en-IN")}`} />
-          <Stat label="Unrealised P&L" value={`INR ${Math.round(pnl).toLocaleString("en-IN")}`} />
-          <Stat label="Positions" value={data.portfolio.length} />
-        </div>
-        <section className="panel">
-          <div className="section-head">
-            <h2>Positions</h2>
-            <button
-              onClick={() =>
-                setData((current) => ({
-                  ...current,
-                  portfolio: [{ name: "", quantity: "", averagePrice: "", currentPrice: "" }, ...current.portfolio]
-                }))
-              }
-              title="Add position"
-            >
-              <Plus size={17} /> Position
-            </button>
-          </div>
-          <div className="stack">
-            {data.portfolio.map((position, index) => (
-              <div className="form-row" key={index}>
-                <input placeholder="Company / ticker" value={position.name} onChange={(event) => updatePosition(index, "name", event.target.value)} />
-                <input placeholder="Quantity" value={position.quantity} onChange={(event) => updatePosition(index, "quantity", event.target.value)} type="number" />
-                <input
-                  placeholder="Avg price INR"
-                  value={position.averagePrice}
-                  onChange={(event) => updatePosition(index, "averagePrice", event.target.value)}
-                  type="number"
-                />
-                <input
-                  placeholder="Current price INR"
-                  value={position.currentPrice}
-                  onChange={(event) => updatePosition(index, "currentPrice", event.target.value)}
-                  type="number"
-                />
-                <button
-                  className="danger"
-                  onClick={() =>
-                    setData((current) => ({ ...current, portfolio: current.portfolio.filter((_, positionIndex) => positionIndex !== index) }))
-                  }
-                  title="Remove position"
-                >
-                  X
-                </button>
-              </div>
-            ))}
-            {data.portfolio.length === 0 ? <p>No portfolio positions yet.</p> : null}
-          </div>
-        </section>
-      </>
-    );
-  }
-
-  function renderCommittee() {
-    const company = selected || data.companies[0];
-    if (!company) return <p>Create a company first.</p>;
-    const agents = [
-      ["Business Analyst", company.scores.businessQuality, "Business model, customers, unit economics and scalability"],
-      ["Financial Analyst", company.scores.financialStrength, "Growth, margins, returns, balance sheet and cash conversion"],
-      ["Forensic Accountant", company.scores.governance, "Governance, accounting quality and red flags"],
-      ["Industry Expert", company.scores.industryTailwinds, "Industry structure, market size and competitive intensity"],
-      ["Risk Manager", company.scores.riskReward, "Downside, thesis killers and permanent-capital-loss risk"],
-      ["Chief Investment Officer", score(company) / 10, "Integrated conviction and portfolio suitability"]
-    ] as const;
-
-    return (
-      <>
-        <PageHead eyebrow="Multi-agent review" title="Investment Committee">
-          Specialist views are generated from your recorded scores until backend AI integration is added.
-        </PageHead>
-        <section className="panel">
-          <div className="toolbar">
-            <select value={company.id} onChange={(event) => setSelectedId(event.target.value)}>
-              {data.companies.map((item) => (
-                <option value={item.id} key={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="committee-grid">
-            {agents.map(([name, agentScore, description]) => (
-              <div className="agent-card" key={name}>
-                <div>
-                  <strong>{name}</strong>
-                  <small>{description}</small>
-                </div>
-                <span className="agent-badge">{Math.round(agentScore * 10)}/100</span>
-              </div>
-            ))}
-          </div>
-          <div className="info">
-            <strong>Committee verdict:</strong> {verdict(company)}
-          </div>
-        </section>
       </>
     );
   }
@@ -4366,11 +4060,6 @@ export default function Home() {
               </select>
             </div>
           </div>
-          <div className="hero-score">
-            <span>Conviction score</span>
-            <strong>{score(selected)}</strong>
-            <small>/100</small>
-          </div>
         </section>
         <nav className="tabs">
           {tabs.map(([id, label]) => (
@@ -4383,9 +4072,6 @@ export default function Home() {
         <div className="footer-actions">
           <span>Saved automatically on this device. Source: {selected.dataSource || "Manual entry"}</span>
           <div className="toolbar">
-            <button className="soft" onClick={() => updateSelected({ watchlisted: !selected.watchlisted })}>
-              {selected.watchlisted ? "Remove from watchlist" : "Add to watchlist"}
-            </button>
             <button className="danger" onClick={deleteCompany}>
               Delete
             </button>
@@ -4446,22 +4132,6 @@ export default function Home() {
           </div>
           <div className="info">Enter verified numbers from annual reports, exchange filings or trusted financial databases.</div>
         </>
-      );
-    }
-
-    if (activeTab === "scorecard") {
-      return (
-        <div className="score-grid">
-          {(Object.entries(scoreLabels) as Array<[ScoreKey, string]>).map(([key, label]) => (
-            <article className="panel score-item" key={key}>
-              <div>
-                <strong>{label}</strong>
-                <span>{company.scores[key]}/10</span>
-              </div>
-              <input min="0" max="10" value={company.scores[key]} onChange={(event) => updateScore(key, event.target.value)} type="range" />
-            </article>
-          ))}
-        </div>
       );
     }
 
@@ -4533,163 +4203,7 @@ export default function Home() {
             )}
           </section>
 
-          <section className="panel">
-            <div className="section-head">
-              <div>
-                <span className="eyebrow">Imported reports</span>
-                <h2>Final report library</h2>
-              </div>
-              <div className="toolbar">
-                <button className="secondary" onClick={exportCodexResearchPacket}>
-                  <Download size={17} /> Export Packet
-                </button>
-                <label className="secondary file-label">
-                  <Upload size={17} /> Import Report
-                  <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} />
-                </label>
-                <button className="secondary" onClick={() => fetchGeneratedReport()} disabled={!selected?.ticker || reportFetching}>
-                  <FileText size={17} /> {reportFetching ? "Fetching" : "Fetch Report"}
-                </button>
-              </div>
-            </div>
-            {company.codexReports?.length ? (
-              <div className="stack">
-                {company.codexReports.map((report) => (
-                  <article className="doc-card" key={report.id}>
-                    <div>
-                      <strong>{report.title}</strong>
-                      <small>
-                        {report.format.toUpperCase()} - imported {new Date(report.importedAt).toLocaleString()}
-                      </small>
-                    </div>
-                    <div className="toolbar">
-                      <button className="secondary" onClick={() => updateSelected({ aiOutput: report.content })}>
-                        Use in report
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="info">
-                Export the evidence packet, generate the institutional report in Codex, then import the final stock-only text here for storage and PDF export.
-              </div>
-            )}
-          </section>
         </div>
-      );
-    }
-
-    if (activeTab === "thesis") {
-      return (
-        <div className="grid-2">
-          <TextCard title="Bull thesis" value={company.bullThesis} onChange={(value) => updateSelected({ bullThesis: value })} />
-          <TextCard title="Bear thesis" value={company.bearThesis} onChange={(value) => updateSelected({ bearThesis: value })} />
-          <TextCard title="Key assumptions" value={company.keyAssumptions} onChange={(value) => updateSelected({ keyAssumptions: value })} />
-          <TextCard title="Thesis killers" value={company.thesisKillers} onChange={(value) => updateSelected({ thesisKillers: value })} />
-        </div>
-      );
-    }
-
-    if (activeTab === "risks") {
-      return (
-        <section className="panel">
-          <div className="section-head">
-            <div>
-              <span className="eyebrow">Downside laboratory</span>
-              <h2>Risk register</h2>
-            </div>
-            <button
-              onClick={() =>
-                updateSelected({
-                  risks: [{ title: "", probability: "Medium", impact: "Medium", mitigation: "" }, ...company.risks]
-                })
-              }
-            >
-              <Plus size={17} /> Risk
-            </button>
-          </div>
-          <div className="stack">
-            {company.risks.map((risk, index) => (
-              <div className="form-row" key={index}>
-                <input
-                  placeholder="Risk"
-                  value={risk.title}
-                  onChange={(event) => updateArray("risks", index, { ...risk, title: event.target.value })}
-                />
-                <select value={risk.probability} onChange={(event) => updateArray("risks", index, { ...risk, probability: event.target.value })}>
-                  {["Low", "Medium", "High"].map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-                <select value={risk.impact} onChange={(event) => updateArray("risks", index, { ...risk, impact: event.target.value })}>
-                  {["Low", "Medium", "High"].map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-                <input
-                  placeholder="Mitigation or trigger"
-                  value={risk.mitigation}
-                  onChange={(event) => updateArray("risks", index, { ...risk, mitigation: event.target.value })}
-                />
-                <button className="danger" onClick={() => removeArrayItem("risks", index)}>
-                  X
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      );
-    }
-
-    if (activeTab === "catalysts") {
-      return (
-        <section className="panel">
-          <div className="section-head">
-            <div>
-              <span className="eyebrow">Re-rating triggers</span>
-              <h2>Catalyst tracker</h2>
-            </div>
-            <button
-              onClick={() =>
-                updateSelected({
-                  catalysts: [{ title: "", date: "", status: "Expected", notes: "" }, ...company.catalysts]
-                })
-              }
-            >
-              <Plus size={17} /> Catalyst
-            </button>
-          </div>
-          <div className="stack">
-            {company.catalysts.map((catalyst, index) => (
-              <div className="form-row" key={index}>
-                <input
-                  placeholder="Catalyst"
-                  value={catalyst.title}
-                  onChange={(event) => updateArray("catalysts", index, { ...catalyst, title: event.target.value })}
-                />
-                <input
-                  type="date"
-                  value={catalyst.date}
-                  onChange={(event) => updateArray("catalysts", index, { ...catalyst, date: event.target.value })}
-                />
-                <select value={catalyst.status} onChange={(event) => updateArray("catalysts", index, { ...catalyst, status: event.target.value })}>
-                  {["Expected", "In Progress", "Delivered", "Delayed", "Failed"].map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-                <input
-                  placeholder="Evidence and notes"
-                  value={catalyst.notes}
-                  onChange={(event) => updateArray("catalysts", index, { ...catalyst, notes: event.target.value })}
-                />
-                <button className="danger" onClick={() => removeArrayItem("catalysts", index)}>
-                  X
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
       );
     }
 
@@ -4718,24 +4232,24 @@ export default function Home() {
                   <input
                     placeholder="Document name"
                     value={document.name}
-                    onChange={(event) => updateArray("documents", index, { ...document, name: event.target.value })}
+                    onChange={(event) => updateDocument(index, { ...document, name: event.target.value })}
                   />
                   <small>
                     {document.type} - {document.status}
                   </small>
                 </div>
                 <div className="toolbar">
-                  <select value={document.type} onChange={(event) => updateArray("documents", index, { ...document, type: event.target.value })}>
+                  <select value={document.type} onChange={(event) => updateDocument(index, { ...document, type: event.target.value })}>
                     {["Annual Report", "Concall", "Investor Presentation", "Credit Rating", "Exchange Filing", "Other"].map((item) => (
                       <option key={item}>{item}</option>
                     ))}
                   </select>
-                  <select value={document.status} onChange={(event) => updateArray("documents", index, { ...document, status: event.target.value })}>
+                  <select value={document.status} onChange={(event) => updateDocument(index, { ...document, status: event.target.value })}>
                     {["To Review", "Reviewed", "Key Source"].map((item) => (
                       <option key={item}>{item}</option>
                     ))}
                   </select>
-                  <button className="danger" onClick={() => removeArrayItem("documents", index)}>
+                  <button className="danger" onClick={() => removeDocument(index)}>
                     X
                   </button>
                 </div>
@@ -4746,170 +4260,25 @@ export default function Home() {
       );
     }
 
-    if (activeTab === "ai") {
-      return (
-        <>
-          {trendlyneIntel ? (
-            <section className="panel">
-              <div className="section-head">
-                <div>
-                  <span className="eyebrow">Trendlyne MCP</span>
-                  <h2>Market intelligence pack</h2>
-                </div>
-                <small>{new Date(trendlyneIntel.importedAt).toLocaleString()}</small>
-              </div>
-              <div className="grid-2">
-                <IntelCard title="Overview and DVM" value={trendlyneIntel.overview} />
-                <IntelCard title="Technicals" value={trendlyneIntel.technical} />
-                <IntelCard title="News and announcements" value={trendlyneIntel.news} />
-                <IntelCard title="Corporate events" value={trendlyneIntel.events} />
-                <IntelCard title="Ownership" value={trendlyneIntel.shareholding} />
-                <IntelCard title="Insider / SAST" value={trendlyneIntel.sast} />
-                <IntelCard title="Bulk and block deals" value={trendlyneIntel.bulkBlock} />
-                <IntelCard title="Document search" value={trendlyneIntel.documents} />
-              </div>
-            </section>
-          ) : (
-            <div className="info">Use Fundamentals, then Sync Trendlyne Full, to pull the full Trendlyne intelligence pack for this company.</div>
-          )}
-          <div className="grid-2" style={{ marginTop: 14 }}>
-            <section className="panel">
-              <span className="eyebrow">Research instruction</span>
-              <h3>AI analysis prompt</h3>
-              <textarea value={company.aiPrompt} onChange={(event) => updateSelected({ aiPrompt: event.target.value })} />
-              <div className="toolbar" style={{ marginTop: 10 }}>
-                <button onClick={buildResearchFromSavedData} disabled={!trendlyneIntel}>
-                  <FileText size={17} /> Build thesis from Trendlyne
-                </button>
-                <button className="secondary" onClick={generateStructuredAnalysis}>
-                  <FileText size={17} /> Manual draft
-                </button>
-              </div>
-              <div className="note">
-                This workspace is for evidence review and rough drafts. Codex writes the final stock-only report, then IMRS fetches or imports it in the Report tab.
-              </div>
-            </section>
-            <section className="panel">
-              <span className="eyebrow">Research output</span>
-              <h3>Analysis workspace</h3>
-              <textarea value={company.aiOutput} onChange={(event) => updateSelected({ aiOutput: event.target.value })} />
-            </section>
-          </div>
-        </>
-      );
-    }
-
-    if (activeTab === "reviews") {
-      return (
-        <section>
-          <div className="section-head">
-            <div>
-              <span className="eyebrow">Living investment journal</span>
-              <h2>Quarterly reviews</h2>
-            </div>
-            <button
-              onClick={() =>
-                updateSelected({
-                  reviews: [{ quarter: "", verdict: "Unchanged", notes: "" }, ...company.reviews]
-                })
-              }
-            >
-              <Plus size={17} /> Review
-            </button>
-          </div>
-          <div className="stack">
-            {company.reviews.map((review, index) => (
-              <article className="panel" key={index}>
-                <div className="review-head">
-                  <input
-                    placeholder="Quarter, e.g. Q1 FY27"
-                    value={review.quarter}
-                    onChange={(event) => updateArray("reviews", index, { ...review, quarter: event.target.value })}
-                  />
-                  <select value={review.verdict} onChange={(event) => updateArray("reviews", index, { ...review, verdict: event.target.value })}>
-                    {["Thesis Stronger", "Unchanged", "Thesis Weaker", "Exit Triggered"].map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                  </select>
-                  <button className="danger" onClick={() => removeArrayItem("reviews", index)}>
-                    X
-                  </button>
-                </div>
-                <textarea
-                  style={{ marginTop: 8 }}
-                  value={review.notes}
-                  onChange={(event) => updateArray("reviews", index, { ...review, notes: event.target.value })}
-                />
-              </article>
-            ))}
-          </div>
-        </section>
-      );
-    }
-
-    const fundamentalsRecord = findFundamentals(company.ticker, company.name);
-    const weighted = weightedExpectedPriceText(company, fundamentalsRecord);
-
-    return (
-      <>
-        <div className="grid-3">
-          {(["bear", "base", "bull"] as const).map((caseName) => {
-            const scenario = company.valuation[caseName];
-            const issue = valuationCaseIssue(company, scenario, fundamentalsRecord);
-            return (
-              <article className="panel valuation-card" key={caseName}>
-                <span className="eyebrow">{caseName} case</span>
-                <label>
-                  EPS CAGR assumption %
-                  <input value={scenario.revenueGrowth} onChange={(event) => updateValuation(caseName, "revenueGrowth", event.target.value)} type="number" />
-                </label>
-                <label>
-                  Future EPS INR
-                  <input value={scenario.eps} onChange={(event) => updateValuation(caseName, "eps", event.target.value)} type="number" />
-                </label>
-                <label>
-                  Exit P/E
-                  <input value={scenario.pe} onChange={(event) => updateValuation(caseName, "pe", event.target.value)} type="number" />
-                </label>
-                <label>
-                  Probability %
-                  <input value={scenario.probability} onChange={(event) => updateValuation(caseName, "probability", event.target.value)} type="number" />
-                </label>
-                <div className="implied">
-                  <span>Implied price</span>
-                  <strong>{valuationPriceText(company, scenario, fundamentalsRecord)}</strong>
-                  {issue ? <small className="muted">{issue}</small> : null}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-        <article className="panel weighted">
-          <span>Probability-weighted expected price</span>
-          <strong>{weighted}</strong>
-          <small className="muted">Scenario output, not a guaranteed target</small>
-        </article>
-      </>
-    );
+    return null;
   }
 
-  function updateArray<K extends "risks" | "catalysts" | "reviews" | "documents">(key: K, index: number, value: Company[K][number]) {
+  function updateDocument(index: number, value: Company["documents"][number]) {
     if (!selected) return;
-    const currentItems = selected[key];
-    saveCompany({ ...selected, [key]: currentItems.map((item, itemIndex) => (itemIndex === index ? value : item)) });
+    saveCompany({ ...selected, documents: selected.documents.map((item, itemIndex) => (itemIndex === index ? value : item)) });
   }
 
-  function removeArrayItem<K extends "risks" | "catalysts" | "reviews" | "documents">(key: K, index: number) {
+  function removeDocument(index: number) {
     if (!selected) return;
-    saveCompany({ ...selected, [key]: selected[key].filter((_, itemIndex) => itemIndex !== index) });
+    saveCompany({ ...selected, documents: selected.documents.filter((_, itemIndex) => itemIndex !== index) });
   }
 
   const navItems: Array<[PageId, string, React.ReactNode]> = [
-    ["dashboard", "Dashboard", <BarChart3 size={16} key="dashboard" />],
-    ["search", "Search", <Search size={16} key="search" />],
-    ["fundamentals", "Data Hub", <FileText size={16} key="fundamentals" />],
+    ["dashboard", "Hub", <BarChart3 size={16} key="dashboard" />],
+    ["search", "Find", <Search size={16} key="search" />],
+    ["fundamentals", "Data", <FileText size={16} key="fundamentals" />],
     ["research", "Report", <FlaskConical size={16} key="research" />],
-    ["kite", "Kite", <KeyRound size={16} key="kite" />]
+    ["kite", "Connection", <KeyRound size={16} key="kite" />]
   ];
 
   if (!hydrated) {
@@ -4979,7 +4348,7 @@ export default function Home() {
               <button className={selectedId === company.id ? "active" : ""} onClick={() => openCompany(company.id)} key={company.id}>
                 <strong>{company.name}</strong>
                 <small>
-                  {company.ticker || "No ticker"} - {score(company)}/100
+                  {company.ticker || "No ticker"} - {company.status}
                 </small>
               </button>
             ))}
@@ -4989,11 +4358,7 @@ export default function Home() {
         <section className="content">
           {activePage === "dashboard" ? renderDashboard() : null}
           {activePage === "search" ? renderSearch() : null}
-          {activePage === "screener" ? renderScreener() : null}
-          {activePage === "watchlist" ? renderWatchlist() : null}
-          {activePage === "portfolio" ? renderPortfolio() : null}
           {activePage === "fundamentals" ? renderFundamentals() : null}
-          {activePage === "committee" ? renderCommittee() : null}
           {activePage === "research" ? renderResearch() : null}
           {activePage === "kite" ? renderKite() : null}
         </section>
@@ -5039,11 +4404,9 @@ function CompanyTable({ companies, openCompany }: { companies: Company[]; openCo
         <thead>
           <tr>
             <th>Company</th>
-            <th>Sector</th>
-            <th>Status</th>
-            <th>ROCE</th>
-            <th>Growth</th>
-            <th>Score</th>
+            <th>Ticker</th>
+            <th>Evidence</th>
+            <th>Report</th>
           </tr>
         </thead>
         <tbody>
@@ -5051,16 +4414,14 @@ function CompanyTable({ companies, openCompany }: { companies: Company[]; openCo
             <tr onClick={() => openCompany(company.id)} key={company.id}>
               <td>
                 <strong>{company.name}</strong>
-                <small>{company.ticker}</small>
+                <small>{company.sector || company.status}</small>
               </td>
-              <td>{company.sector || "-"}</td>
+              <td>{company.ticker || "-"}</td>
               <td>
-                <span className="pill">{company.status}</span>
+                <span className="pill">{company.dataSource ? "Collected" : "Manual"}</span>
               </td>
-              <td>{company.financials.roce || "-"}{company.financials.roce ? "%" : ""}</td>
-              <td>{company.financials.salesGrowth || "-"}{company.financials.salesGrowth ? "%" : ""}</td>
               <td>
-                <span className="score">{score(company)}</span>
+                <span className="pill">{company.codexReports?.length ? "Ready" : "Pending"}</span>
               </td>
             </tr>
           ))}
@@ -5075,16 +4436,6 @@ function TextCard({ title, value, onChange }: { title: string; value: string; on
     <article className="panel">
       <h3>{title}</h3>
       <textarea value={value} onChange={(event) => onChange(event.target.value)} />
-    </article>
-  );
-}
-
-function IntelCard({ title, value }: { title: string; value: string }) {
-  const cleanValue = cleanTrendlyneIntel(title, value);
-  return (
-    <article className="intel-card">
-      <h3>{title}</h3>
-      <pre>{cleanValue}</pre>
     </article>
   );
 }
