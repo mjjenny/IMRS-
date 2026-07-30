@@ -27,7 +27,7 @@ npm audit --omit=dev
 
 This repository is already connected to the existing Vercel project. After changes are pushed to `main`, Vercel should redeploy the same live app URL.
 
-## Kite Market Data
+## Company Search
 
 Company search runs through the app backend at:
 
@@ -35,20 +35,7 @@ Company search runs through the app backend at:
 /api/company-search
 ```
 
-Search uses Kite Connect's instrument master. To add live LTP, add these environment variables in Vercel:
-
-```text
-KITE_API_KEY
-KITE_API_SECRET
-```
-
-In the Kite developer console, set the redirect URL to:
-
-```text
-https://imrs-omega.vercel.app/api/kite/callback
-```
-
-Then open IMRS, go to the Kite page, and click Connect Kite. Kite access tokens are session based, so reconnect after the token expires.
+Search now uses the lightweight IMRS starter directory. Create the company record from search, then use the Data page to sync richer evidence.
 
 ## Screener Fundamentals
 
@@ -212,9 +199,9 @@ The renderer accepts the same imported report JSON used by IMRS. It uses WeasyPr
 Current automated sources:
 
 ```text
-Kite Connect: instruments and live LTP
 NSE: shareholding pattern summary
 NSE: annual financial-result filings
+Trendlyne MCP: richer market intelligence when configured
 ```
 
 Current upload fallback:
@@ -230,9 +217,9 @@ For fully automated fundamentals, use a licensed provider or an official export 
 Target production stack:
 
 ```text
-Kite: price, OHLC, volume, instruments
 NSE/BSE: exchange filings, shareholding, results, XBRL links
 Trendlyne: richer fundamentals, ratios, DVM/analyst/ownership data if official export/API access is available
+Codex: dynamic stock-only research report generation from the exported evidence packet
 ```
 
 The old single-file version is preserved at:

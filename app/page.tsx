@@ -6,7 +6,6 @@ import {
   FileDown,
   FileText,
   FlaskConical,
-  KeyRound,
   Plus,
   Search,
   Upload
@@ -193,12 +192,6 @@ type TrendlyneIntelligenceRecord = {
   documents: string;
 };
 
-type KiteStatus = {
-  apiKeyConfigured: boolean;
-  apiSecretConfigured: boolean;
-  connected: boolean;
-};
-
 type TrendlyneStatus = {
   urlConfigured: boolean;
   tokenConfigured: boolean;
@@ -242,7 +235,7 @@ type CompanySearchResult = {
   source?: string;
 };
 
-type PageId = "dashboard" | "search" | "fundamentals" | "research" | "kite";
+type PageId = "dashboard" | "search" | "fundamentals" | "research";
 type TabId = "overview" | "financials" | "report" | "documents";
 
 const scoreLabels: Record<ScoreKey, string> = {
@@ -1052,7 +1045,7 @@ function sanityCheckItems(company: Company, record?: FundamentalsRecord, intelli
 function sourceCoverageRows(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
   const review = dataQualityReview(company, record, intelligence);
   const rows: Array<[string, string]> = [
-    ["Kite", company.financials.currentPrice ? `Live/delayed price captured: INR ${company.financials.currentPrice}` : "Not connected for this company"],
+    ["Market price", company.financials.currentPrice ? `Current price captured: INR ${company.financials.currentPrice}` : "Not captured for this company"],
     [
       "Trendlyne fundamentals",
       record
@@ -1424,7 +1417,6 @@ function readerSafeText(value: string) {
   return value
     .replace(/^Trendlyne\s+/i, "")
     .replace(/\bTrendlyne\b/gi, "Market intelligence")
-    .replace(/\bKite\b/gi, "Market price")
     .replace(/\bNSE\b/gi, "Exchange")
     .replace(/\bMCP\b/gi, "data")
     .trim();
@@ -1901,7 +1893,7 @@ function buildMetricsForPacket(company: Company, record?: FundamentalsRecord) {
   const netMargin = netMarginProxy(company, record);
   const entries = [
     metricEntry("Market capitalisation", m.marketCap, "INR crore", period, record ? record.source : "IMRS company record"),
-    metricEntry("Current price", m.currentPrice, "INR/share", period, company.financials.currentPrice ? "Kite/company record" : "missing"),
+    metricEntry("Current price", m.currentPrice, "INR/share", period, company.financials.currentPrice ? "company record" : "missing"),
     metricEntry("Revenue", m.revenue, "INR crore", period, record ? record.source : "IMRS company record"),
     metricEntry("Net profit", m.profit, "INR crore", period, record ? record.source : "IMRS company record"),
     metricEntry(
@@ -2047,7 +2039,6 @@ function packetSafeLabel(value: string) {
   return value
     .replace(/^Trendlyne\s+/i, "")
     .replace(/\bTrendlyne\b/gi, "Market intelligence")
-    .replace(/\bKite\b/gi, "Market price")
     .replace(/\bNSE\b/gi, "Exchange")
     .replace(/\s+/g, " ")
     .trim();
@@ -2056,7 +2047,6 @@ function packetSafeLabel(value: string) {
 function packetSafeText(value: string) {
   return scrubReportText(value)
     .replace(/\bTrendlyne\b/gi, "market intelligence")
-    .replace(/\bKite\b/gi, "market price")
     .replace(/\bNSE\b/gi, "exchange")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -2929,8 +2919,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CompanySearchResult[]>(starterCompanies);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchMessage, setSearchMessage] = useState("Kite-ready search is available. Live LTP needs Kite credentials.");
-  const [kiteStatus, setKiteStatus] = useState<KiteStatus | null>(null);
+  const [searchMessage, setSearchMessage] = useState("Search the built-in starter directory, then sync richer evidence from Data.");
   const [trendlyneStatus, setTrendlyneStatus] = useState<TrendlyneStatus | null>(null);
   const [trendlyneLoading, setTrendlyneLoading] = useState(false);
   const [syncingSymbol, setSyncingSymbol] = useState("");
@@ -2970,14 +2959,6 @@ export default function Home() {
 
   useEffect(() => {
     if (!hydrated) return;
-    fetch("/api/kite/status")
-      .then((response) => response.json())
-      .then((status: KiteStatus) => setKiteStatus(status))
-      .catch(() => setKiteStatus(null));
-  }, [hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
     refreshTrendlyneStatus();
   }, [hydrated]);
 
@@ -2996,7 +2977,7 @@ export default function Home() {
           message?: string;
         };
         setSearchResults(payload.results || []);
-        setSearchMessage(payload.message || `Showing ${payload.source === "kite" ? "Kite Connect" : "starter directory"} results.`);
+        setSearchMessage(payload.message || "Showing starter directory results.");
       } catch {
         if (!controller.signal.aborted) {
           setSearchResults([]);
@@ -3324,7 +3305,7 @@ export default function Home() {
     let fetchedFinancials: FundamentalsRecord | undefined;
     setSyncingSymbol(item.ticker);
     try {
-      if (item.exchange === "NSE" || item.source?.includes("Kite")) {
+      if (item.exchange === "NSE") {
         const lookupSymbol = externalLookupTicker(item.ticker);
         [fetchedShareholding, fetchedFinancials] = await Promise.all([
           fetchNseShareholding(lookupSymbol).catch(() => undefined),
@@ -3730,37 +3711,6 @@ export default function Home() {
           </div>
           <div className="info">{searchMessage}</div>
         </form>
-      </>
-    );
-  }
-
-  function renderKite() {
-    return (
-      <>
-        <PageHead eyebrow="Market data connection" title="Kite Connect">
-          Connect your Zerodha Kite session to enable live LTP in company search.
-        </PageHead>
-        <section className="panel">
-          <div className="grid-3">
-            <Kpi label="API key" value={kiteStatus?.apiKeyConfigured ? "Configured" : "Missing"} />
-            <Kpi label="API secret" value={kiteStatus?.apiSecretConfigured ? "Configured" : "Missing"} />
-            <Kpi label="Session" value={kiteStatus?.connected ? "Connected" : "Not connected"} />
-          </div>
-          <div className="toolbar" style={{ marginTop: 16 }}>
-            <a href="/api/kite/login" style={{ textDecoration: "none" }}>
-              <button type="button">
-                <KeyRound size={17} /> Connect Kite
-              </button>
-            </a>
-          </div>
-          <div className="info">
-            Add <strong>KITE_API_KEY</strong> and <strong>KITE_API_SECRET</strong> in Vercel first. Then click Connect Kite,
-            complete Zerodha login, and return to IMRS. The session is stored in this browser as a secure cookie.
-          </div>
-          <div className="note">
-            IMRS uses Kite for market-data lookup only. It does not place orders.
-          </div>
-        </section>
       </>
     );
   }
@@ -4241,8 +4191,7 @@ export default function Home() {
     ["dashboard", "Hub", <BarChart3 size={16} key="dashboard" />],
     ["search", "Find", <Search size={16} key="search" />],
     ["fundamentals", "Data", <FileText size={16} key="fundamentals" />],
-    ["research", "Report", <FlaskConical size={16} key="research" />],
-    ["kite", "Connection", <KeyRound size={16} key="kite" />]
+    ["research", "Report", <FlaskConical size={16} key="research" />]
   ];
 
   if (!hydrated) {
@@ -4317,7 +4266,6 @@ export default function Home() {
           {activePage === "search" ? renderSearch() : null}
           {activePage === "fundamentals" ? renderFundamentals() : null}
           {activePage === "research" ? renderResearch() : null}
-          {activePage === "kite" ? renderKite() : null}
         </section>
       </div>
     </main>
