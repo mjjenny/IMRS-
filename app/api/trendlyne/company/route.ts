@@ -18,6 +18,7 @@ type TrendlyneRecord = {
   roe: string;
   roce: string;
   debtEquity: string;
+  promoterHolding: string;
   salesGrowth: string;
   profitGrowth: string;
   opm: string;
@@ -52,6 +53,7 @@ const fieldAliases: Record<keyof Omit<TrendlyneRecord, "id" | "source" | "import
   roe: ["roe", "return on equity"],
   roce: ["roce", "return on capital employed"],
   debtEquity: ["debt/equity", "debt equity", "debt to equity", "d/e"],
+  promoterHolding: ["promoter", "promoter holding"],
   salesGrowth: ["sales growth", "revenue growth"],
   profitGrowth: ["profit growth", "pat growth", "net profit growth"],
   opm: ["opm", "operating margin", "operating profit margin"],
@@ -64,6 +66,22 @@ const fieldAliases: Record<keyof Omit<TrendlyneRecord, "id" | "source" | "import
   dvmValuation: ["valuation", "dvm valuation", "valuation score"],
   dvmMomentum: ["momentum", "dvm momentum", "momentum score"],
   analystScore: ["analyst", "analyst score", "analyst rating", "broker score", "forecaster"]
+};
+
+const metricHeadingAliases: Partial<Record<keyof TrendlyneRecord, string[]>> = {
+  pe: ["pe 3yr average", "pe 5yr average", "pe"],
+  roe: ["roe ann", "return on equity"],
+  roce: ["roce ann", "return on capital employed"],
+  salesGrowth: ["rev. growth qtr yoy", "revenue growth", "sales growth"],
+  profitGrowth: ["net profit qtr growth yoy", "operating profit growth qtr yoy", "profit growth"],
+  opm: ["opm qtr yoy", "operating profit margin", "operating margin"],
+  cfo: ["cash flow from operations", "operating cash flow", "cfo"],
+  fiiHolding: ["fii holding current qtr"],
+  institutionalHolding: ["institutional holding current qtr"],
+  dvmDurability: ["durability score", "prev day tl durability score"],
+  dvmValuation: ["valuation score", "prev day tl valuation score"],
+  dvmMomentum: ["momentum score", "prev day tl momentum score"],
+  analystScore: ["analyst", "forecaster"]
 };
 
 function uid() {
@@ -107,7 +125,8 @@ function parseJsonish(text: string): unknown {
   const trimmed = text.trim();
   if (!trimmed) return text;
   try {
-    return JSON.parse(trimmed);
+    const parsed = JSON.parse(trimmed);
+    return typeof parsed === "string" ? parseJsonish(parsed) : parsed;
   } catch {
     const firstObject = trimmed.indexOf("{");
     const lastObject = trimmed.lastIndexOf("}");
@@ -129,6 +148,15 @@ function parseJsonish(text: string): unknown {
     }
     return text;
   }
+}
+
+function stringifySource(source: unknown): string {
+  if (source === null || source === undefined) return "";
+  if (typeof source === "string") return source;
+  if (typeof source === "object" && "markdown_data" in source) {
+    return stringifySource((source as { markdown_data?: unknown }).markdown_data);
+  }
+  return JSON.stringify(source);
 }
 
 function flatten(value: unknown, prefix = "", output: Array<{ path: string; value: string }> = []) {
@@ -167,6 +195,70 @@ function regexPick(text: string, aliases: string[]) {
 
 function fieldValue(sources: unknown[], text: string, field: keyof typeof fieldAliases) {
   return findByAlias(sources, fieldAliases[field]) || regexPick(text, fieldAliases[field]);
+}
+
+function parseMetricBlocks(text: string, symbol: string) {
+  const metrics = new Map<string, string>();
+  const normalizedSymbol = symbol.toUpperCase();
+
+  text.split(/\n\s*---\s*\n/g).forEach((block) => {
+    const lines = block
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const symbolIndex = lines.findIndex((line) => line.toUpperCase().startsWith(`${normalizedSymbol}:`));
+    if (symbolIndex <= 0) return;
+
+    const heading =
+      [...lines.slice(0, symbolIndex)]
+        .reverse()
+        .find((line) => !line.includes("|") && !/^[A-Z0-9]+:/.test(line.toUpperCase())) || "";
+    const rawValue = lines[symbolIndex].slice(lines[symbolIndex].indexOf(":") + 1);
+
+    if (heading && rawValue && rawValue !== "None") {
+      metrics.set(normalizeKey(heading), cleanValue(rawValue));
+    }
+  });
+
+  return metrics;
+}
+
+function metricValue(metrics: Map<string, string>, field: keyof TrendlyneRecord) {
+  const aliases = metricHeadingAliases[field] || [];
+  for (const alias of aliases) {
+    const normalizedAlias = normalizeKey(alias);
+    const exact = metrics.get(normalizedAlias);
+    if (exact) return exact;
+
+    const match = Array.from(metrics.entries()).find(([heading]) => heading.includes(normalizedAlias));
+    if (match?.[1]) return match[1];
+  }
+  return "";
+}
+
+function summaryHolding(text: string, label: string) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`\\["${escaped}",\\s*(-?\\d[\\d,.]*\\.?\\d*)`, "i").exec(text);
+  return match ? cleanValue(match[1]) : "";
+}
+
+function latestChartHolding(text: string, label: string) {
+  const section = new RegExp(`${label}:([\\s\\S]*?)(?:\\n\\s{2}[A-Z][A-Za-z ]+:|\\n[a-zA-Z]+:|$)`, "i").exec(text)?.[1] || "";
+  const matches = Array.from(section.matchAll(/"[^"]+",\s*(-?\d[\d,.]*\.?\d*)\s*,/g));
+  const latest = matches.at(-1);
+  return latest ? cleanValue(latest[1]) : "";
+}
+
+function stockDataIdentity(text: string) {
+  const line = /stockData:\s*\n\s*([^\n]+)/i.exec(text)?.[1] || "";
+  const parts = line.split(",").map((part) => part.trim());
+  return {
+    companyName: parts[0] || "",
+    ticker: parts[1] || "",
+    durability: cleanValue(parts[6]),
+    valuation: cleanValue(parts[7]),
+    momentum: cleanValue(parts[8])
+  };
 }
 
 async function callTrendlyneTool(client: TrendlyneMcpClient, name: string, args: Record<string, unknown>) {
@@ -232,34 +324,43 @@ export async function GET(request: NextRequest) {
     ]);
 
     const sources = [parametersCall.data, ownershipCall.data, overviewCall.data, entityCall.data];
-    const allText = [parametersCall.text, ownershipCall.text, overviewCall.text, entityCall.text].join("\n");
+    const allText = sources.map(stringifySource).join("\n");
+    const metrics = parseMetricBlocks(allText, stockCode);
+    const identity = stockDataIdentity(allText);
+    const promoterHolding = summaryHolding(allText, "Promoter");
+    const fiiHolding = summaryHolding(allText, "FII") || metricValue(metrics, "fiiHolding");
+    const diiHolding = latestChartHolding(allText, "DII");
+    const institutionalHolding =
+      summaryHolding(allText, "Other Institutions") || latestChartHolding(allText, "Institutional") || metricValue(metrics, "institutionalHolding");
+
     const record: TrendlyneRecord = {
       id: uid(),
-      companyName: entity?.name || fieldValue(sources, allText, "companyName") || symbol,
-      ticker: entity?.nse_code || symbol,
+      companyName: entity?.name || identity.companyName || symbol,
+      ticker: entity?.nse_code || identity.ticker || symbol,
       source: "Trendlyne MCP",
       importedAt: new Date().toISOString(),
       reportDate: "Latest",
       marketCap: fieldValue(sources, allText, "marketCap"),
-      revenue: fieldValue(sources, allText, "revenue"),
-      profit: fieldValue(sources, allText, "profit"),
-      eps: fieldValue(sources, allText, "eps"),
-      pe: fieldValue(sources, allText, "pe"),
-      roe: fieldValue(sources, allText, "roe"),
-      roce: fieldValue(sources, allText, "roce"),
+      revenue: "",
+      profit: "",
+      eps: "",
+      pe: metricValue(metrics, "pe"),
+      roe: metricValue(metrics, "roe"),
+      roce: metricValue(metrics, "roce"),
       debtEquity: fieldValue(sources, allText, "debtEquity"),
-      salesGrowth: fieldValue(sources, allText, "salesGrowth"),
-      profitGrowth: fieldValue(sources, allText, "profitGrowth"),
-      opm: fieldValue(sources, allText, "opm"),
-      cfo: fieldValue(sources, allText, "cfo"),
-      currentPrice: fieldValue(sources, allText, "currentPrice"),
-      fiiHolding: fieldValue(sources, allText, "fiiHolding"),
-      diiHolding: fieldValue(sources, allText, "diiHolding"),
-      institutionalHolding: fieldValue(sources, allText, "institutionalHolding"),
-      dvmDurability: fieldValue(sources, allText, "dvmDurability"),
-      dvmValuation: fieldValue(sources, allText, "dvmValuation"),
-      dvmMomentum: fieldValue(sources, allText, "dvmMomentum"),
-      analystScore: fieldValue(sources, allText, "analystScore")
+      promoterHolding,
+      salesGrowth: metricValue(metrics, "salesGrowth"),
+      profitGrowth: metricValue(metrics, "profitGrowth"),
+      opm: metricValue(metrics, "opm"),
+      cfo: metricValue(metrics, "cfo"),
+      currentPrice: "",
+      fiiHolding,
+      diiHolding,
+      institutionalHolding,
+      dvmDurability: identity.durability || metricValue(metrics, "dvmDurability"),
+      dvmValuation: identity.valuation || metricValue(metrics, "dvmValuation"),
+      dvmMomentum: identity.momentum || metricValue(metrics, "dvmMomentum"),
+      analystScore: metricValue(metrics, "analystScore")
     };
 
     return NextResponse.json({

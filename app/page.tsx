@@ -125,6 +125,7 @@ type FundamentalsRecord = {
   roe: string;
   roce: string;
   debtEquity: string;
+  promoterHolding: string;
   salesGrowth: string;
   profitGrowth: string;
   opm: string;
@@ -786,6 +787,7 @@ function extractTrendlyneRows(rows: string[][], fallbackTicker = "", fallbackCom
     roe: valueFor("roe"),
     roce: valueFor("roce"),
     debtEquity: valueFor("debtEquity"),
+    promoterHolding: "",
     salesGrowth: valueFor("salesGrowth"),
     profitGrowth: valueFor("profitGrowth"),
     opm: valueFor("opm"),
@@ -852,6 +854,7 @@ function extractScreenerWorkbook(buffer: ArrayBuffer, fallbackTicker = ""): Fund
     roe: equity ? formatNumber((profit / equity) * 100) : "",
     roce: prevCapital + currentCapital ? formatNumber(((pbt + interest) * 2 * 100) / (prevCapital + currentCapital)) : "",
     debtEquity: equity ? formatNumber(borrowings / equity) : "",
+    promoterHolding: "",
     salesGrowth: priorSales ? formatNumber(((sales / priorSales) - 1) * 100) : "",
     profitGrowth: priorProfit ? formatNumber(((profit / priorProfit) - 1) * 100) : "",
     opm: sales ? formatNumber((operatingProfit / sales) * 100) : "",
@@ -1095,6 +1098,7 @@ export default function Home() {
         roe: record.roe || company.financials.roe,
         roce: record.roce || company.financials.roce,
         debtEquity: record.debtEquity || company.financials.debtEquity,
+        promoterHolding: record.promoterHolding || company.financials.promoterHolding,
         fiiHolding: record.fiiHolding || company.financials.fiiHolding,
         diiHolding: record.diiHolding || company.financials.diiHolding,
         institutionalHolding: record.institutionalHolding || company.financials.institutionalHolding,
