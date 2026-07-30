@@ -152,7 +152,15 @@ function parseJsonish(text: string): unknown {
 
 function stringifySource(source: unknown): string {
   if (source === null || source === undefined) return "";
-  if (typeof source === "string") return source;
+  if (typeof source === "string") {
+    const trimmed = source.trim();
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      const parsed = parseJsonish(trimmed);
+      if (typeof parsed !== "string") return stringifySource(parsed);
+      if (parsed !== source) return parsed;
+    }
+    return source;
+  }
   if (typeof source === "object" && "markdown_data" in source) {
     return stringifySource((source as { markdown_data?: unknown }).markdown_data);
   }
