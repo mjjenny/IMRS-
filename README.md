@@ -114,6 +114,31 @@ ROE, ROCE, debt/equity, operating cash flow, FII holding, DII holding, instituti
 
 This is the official-subscription route. IMRS does not scrape Trendlyne pages or store your Trendlyne login. If Trendlyne provides an official API token or live export URL in your account, it can be added later as a background sync.
 
+## Trendlyne MCP Connector
+
+Trendlyne MCP can be connected server-side from the Next.js backend. Add the MCP URL from your Trendlyne MCP subscription in Vercel:
+
+```text
+TRENDLYNE_MCP_URL
+```
+
+If Trendlyne provides a bearer token or API key, add whichever one they provide:
+
+```text
+TRENDLYNE_MCP_TOKEN
+TRENDLYNE_MCP_API_KEY
+```
+
+Then open IMRS > Fundamentals > Trendlyne MCP and click Check MCP. The app will connect from the backend, list Trendlyne's available MCP tools, and keep the URL/token hidden from the browser.
+
+The first MCP route is:
+
+```text
+/api/trendlyne/status
+```
+
+After the available tool names are confirmed from your subscription, the next route will map Trendlyne's financials, ratios, ownership and DVM tools into IMRS company fields automatically.
+
 ## Data Automation Roadmap
 
 Current automated sources:

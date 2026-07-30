@@ -259,6 +259,26 @@ textarea {
   margin-bottom: 14px;
 }
 
+.compact-stats {
+  margin-top: 16px;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.tag {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
 .grid-2,
 .score-grid,
 .committee-grid {

@@ -167,6 +167,18 @@ type KiteStatus = {
   connected: boolean;
 };
 
+type TrendlyneStatus = {
+  urlConfigured: boolean;
+  tokenConfigured: boolean;
+  apiKeyConfigured: boolean;
+  connected: boolean;
+  transport?: string;
+  toolCount?: number;
+  tools?: Array<{ name: string; description: string }>;
+  message?: string;
+  error?: string;
+};
+
 type CompanySearchResult = {
   name: string;
   ticker: string;
@@ -947,6 +959,8 @@ export default function Home() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchMessage, setSearchMessage] = useState("Kite-ready search is available. Live LTP needs Kite credentials.");
   const [kiteStatus, setKiteStatus] = useState<KiteStatus | null>(null);
+  const [trendlyneStatus, setTrendlyneStatus] = useState<TrendlyneStatus | null>(null);
+  const [trendlyneLoading, setTrendlyneLoading] = useState(false);
   const [syncingSymbol, setSyncingSymbol] = useState("");
   const [screen, setScreen] = useState({ roce: "15", growth: "15", debt: "1", pe: "50" });
 
@@ -987,6 +1001,11 @@ export default function Home() {
       .then((response) => response.json())
       .then((status: KiteStatus) => setKiteStatus(status))
       .catch(() => setKiteStatus(null));
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    refreshTrendlyneStatus();
   }, [hydrated]);
 
   useEffect(() => {
@@ -1180,6 +1199,25 @@ export default function Home() {
       window.alert(error instanceof Error ? error.message : "Could not sync NSE financials.");
     } finally {
       setSyncingSymbol("");
+    }
+  }
+
+  async function refreshTrendlyneStatus() {
+    setTrendlyneLoading(true);
+    try {
+      const response = await fetch("/api/trendlyne/status", { cache: "no-store" });
+      const status = (await response.json()) as TrendlyneStatus;
+      setTrendlyneStatus(status);
+    } catch {
+      setTrendlyneStatus({
+        urlConfigured: false,
+        tokenConfigured: false,
+        apiKeyConfigured: false,
+        connected: false,
+        error: "Could not check Trendlyne MCP."
+      });
+    } finally {
+      setTrendlyneLoading(false);
     }
   }
 
@@ -1830,6 +1868,40 @@ Verify all figures, review primary documents, test thesis killers and complete v
         <PageHead eyebrow="Source-backed data" title="Fundamentals Import">
           Combine Kite prices, NSE filings, Screener workbooks and Trendlyne exports into one company record.
         </PageHead>
+        <section className="panel">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Live data connector</span>
+              <h2>Trendlyne MCP</h2>
+            </div>
+            <button className="secondary" onClick={refreshTrendlyneStatus} disabled={trendlyneLoading}>
+              <Download size={17} /> {trendlyneLoading ? "Checking" : "Check MCP"}
+            </button>
+          </div>
+          <div className="stats compact-stats">
+            <Stat label="MCP URL" value={trendlyneStatus?.urlConfigured ? "Configured" : "Missing"} />
+            <Stat
+              label="Auth"
+              value={trendlyneStatus?.tokenConfigured || trendlyneStatus?.apiKeyConfigured ? "Configured" : "Not set"}
+            />
+            <Stat label="Connection" value={trendlyneStatus?.connected ? "Connected" : "Not connected"} />
+            <Stat label="Tools" value={trendlyneStatus?.toolCount ? String(trendlyneStatus.toolCount) : "0"} />
+          </div>
+          <div className={trendlyneStatus?.connected ? "info" : "note"}>
+            {trendlyneStatus?.connected
+              ? `Trendlyne MCP is reachable through ${trendlyneStatus.transport}. IMRS can now inspect the exact tools before mapping live fundamentals.`
+              : trendlyneStatus?.error || trendlyneStatus?.message || "Add TRENDLYNE_MCP_URL in Vercel to enable this connector."}
+          </div>
+          {trendlyneStatus?.tools?.length ? (
+            <div className="tag-row">
+              {trendlyneStatus.tools.slice(0, 8).map((tool) => (
+                <span className="tag" title={tool.description} key={tool.name}>
+                  {tool.name}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </section>
         <section className="panel">
           <div className="section-head">
             <div>
