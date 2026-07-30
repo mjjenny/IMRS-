@@ -145,6 +145,14 @@ The live company sync route is:
 
 IMRS calls Trendlyne's entity search, structured parameter, ownership/shareholding and overview tools, then maps the response into the selected company. Use IMRS > Fundamentals > Sync Trendlyne after selecting or importing a company.
 
+The full intelligence route is:
+
+```text
+/api/trendlyne/intelligence?symbol=RELIANCE
+```
+
+This calls Trendlyne's overview, technical, news, corporate events, shareholding, SAST/insider, bulk/block deal and document-search tools. The app stores the returned intelligence pack under the selected company's AI Analysis tab.
+
 ## Data Automation Roadmap
 
 Current automated sources:

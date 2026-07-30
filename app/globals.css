@@ -579,12 +579,29 @@ td small {
 
 .result-card,
 .doc-card,
+.intel-card,
 .agent-card,
 .portfolio-row {
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
+}
+
+.intel-card h3 {
+  margin-top: 0;
+}
+
+.intel-card pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .result-card small,

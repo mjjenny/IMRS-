@@ -108,6 +108,7 @@ type AppData = {
   portfolio: PortfolioPosition[];
   fundamentals: Record<string, FundamentalsRecord>;
   shareholding: Record<string, ShareholdingRecord>;
+  trendlyne: Record<string, TrendlyneIntelligenceRecord>;
 };
 
 type FundamentalsRecord = {
@@ -160,6 +161,23 @@ type ShareholdingRecord = {
     submissionDate: string;
     xbrlUrl: string;
   }>;
+};
+
+type TrendlyneIntelligenceRecord = {
+  id: string;
+  companyName: string;
+  ticker: string;
+  source: string;
+  importedAt: string;
+  transport: string;
+  overview: string;
+  technical: string;
+  news: string;
+  events: string;
+  shareholding: string;
+  sast: string;
+  bulkBlock: string;
+  documents: string;
 };
 
 type KiteStatus = {
@@ -952,7 +970,13 @@ function extractNseShareholdingCsv(text: string, fallbackTicker = ""): Sharehold
 
 export default function Home() {
   const [hydrated, setHydrated] = useState(false);
-  const [data, setData] = useState<AppData>({ companies: [demoCompany()], portfolio: [], fundamentals: {}, shareholding: {} });
+  const [data, setData] = useState<AppData>({
+    companies: [demoCompany()],
+    portfolio: [],
+    fundamentals: {},
+    shareholding: {},
+    trendlyne: {}
+  });
   const [activePage, setActivePage] = useState<PageId>("dashboard");
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [selectedId, setSelectedId] = useState("");
@@ -977,17 +1001,18 @@ export default function Home() {
           companies: companies.length ? companies : [demoCompany()],
           portfolio: parsed.portfolio || [],
           fundamentals: parsed.fundamentals || {},
-          shareholding: parsed.shareholding || {}
+          shareholding: parsed.shareholding || {},
+          trendlyne: parsed.trendlyne || {}
         });
         setSelectedId(companies[0]?.id || "");
       } else {
         const sample = demoCompany();
-        setData({ companies: [sample], portfolio: [], fundamentals: {}, shareholding: {} });
+        setData({ companies: [sample], portfolio: [], fundamentals: {}, shareholding: {}, trendlyne: {} });
         setSelectedId(sample.id);
       }
     } catch {
       const sample = demoCompany();
-      setData({ companies: [sample], portfolio: [], fundamentals: {}, shareholding: {} });
+      setData({ companies: [sample], portfolio: [], fundamentals: {}, shareholding: {}, trendlyne: {} });
       setSelectedId(sample.id);
     } finally {
       setHydrated(true);
@@ -1080,6 +1105,18 @@ export default function Home() {
     );
   }
 
+  function findTrendlyneIntelligence(ticker: string, companyName: string, source = data.trendlyne) {
+    const normalizedTicker = ticker.toUpperCase();
+    const normalizedName = normalizeKey(companyName);
+    return (
+      Object.values(source).find((record) => record.ticker && record.ticker.toUpperCase() === normalizedTicker) ||
+      Object.values(source).find((record) => {
+        const recordName = normalizeKey(record.companyName);
+        return recordName.includes(normalizedName) || normalizedName.includes(recordName);
+      })
+    );
+  }
+
   function applyFundamentals(company: Company, record?: FundamentalsRecord) {
     if (!record) return company;
     const priceForPe = asNumber(company.financials.currentPrice) || asNumber(record.currentPrice);
@@ -1157,6 +1194,17 @@ export default function Home() {
     const payload = (await response.json()) as { record?: FundamentalsRecord; error?: string };
     if (!response.ok || !payload.record) {
       throw new Error(payload.error || "No Trendlyne MCP record found.");
+    }
+    return payload.record;
+  }
+
+  async function fetchTrendlyneIntelligence(symbol: string) {
+    const response = await fetch(`/api/trendlyne/intelligence?symbol=${encodeURIComponent(symbol)}`, {
+      cache: "no-store"
+    });
+    const payload = (await response.json()) as { record?: TrendlyneIntelligenceRecord; error?: string };
+    if (!response.ok || !payload.record) {
+      throw new Error(payload.error || "No Trendlyne MCP intelligence record found.");
     }
     return payload.record;
   }
@@ -1244,11 +1292,16 @@ export default function Home() {
 
     setSyncingSymbol(company.ticker);
     try {
-      const record = await fetchTrendlyneCompany(company.ticker);
+      const [record, intelligence] = await Promise.all([
+        fetchTrendlyneCompany(company.ticker),
+        fetchTrendlyneIntelligence(company.ticker).catch(() => undefined)
+      ]);
       const key = record.ticker || company.ticker;
+      const intelligenceKey = intelligence?.ticker || key;
       setData((current) => ({
         ...current,
         fundamentals: { ...current.fundamentals, [key]: record },
+        trendlyne: intelligence ? { ...current.trendlyne, [intelligenceKey]: intelligence } : current.trendlyne,
         companies: current.companies.map((item) => {
           const matchesTicker = item.ticker.toUpperCase() === company.ticker.toUpperCase();
           const matchesName = normalizeKey(record.companyName).includes(normalizeKey(item.name));
@@ -1257,8 +1310,8 @@ export default function Home() {
       }));
       setSelectedId(company.id);
       setActivePage("research");
-      setActiveTab("financials");
-      window.alert(`Synced Trendlyne MCP data for ${record.companyName}.`);
+      setActiveTab(intelligence ? "ai" : "financials");
+      window.alert(`Synced Trendlyne MCP data for ${record.companyName}${intelligence ? " with full intelligence pack" : ""}.`);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not sync Trendlyne MCP data.");
     } finally {
@@ -1372,7 +1425,13 @@ export default function Home() {
         const parsed = JSON.parse(String(reader.result)) as Partial<AppData>;
         if (!parsed.companies) throw new Error("Missing companies");
         const companies = parsed.companies.map(normalizeCompany);
-        setData({ companies, portfolio: parsed.portfolio || [], fundamentals: parsed.fundamentals || {}, shareholding: parsed.shareholding || {} });
+        setData({
+          companies,
+          portfolio: parsed.portfolio || [],
+          fundamentals: parsed.fundamentals || {},
+          shareholding: parsed.shareholding || {},
+          trendlyne: parsed.trendlyne || {}
+        });
         setSelectedId(companies[0]?.id || "");
         setActivePage("dashboard");
       } catch {
@@ -1924,7 +1983,7 @@ Verify all figures, review primary documents, test thesis killers and complete v
                 <Download size={17} /> {trendlyneLoading ? "Checking" : "Check MCP"}
               </button>
               <button onClick={() => syncTrendlyneCompany()} disabled={!selected?.ticker || Boolean(syncingSymbol)}>
-                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync Trendlyne"}
+                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync Trendlyne Full"}
               </button>
             </div>
           </div>
@@ -2194,6 +2253,8 @@ Verify all figures, review primary documents, test thesis killers and complete v
   }
 
   function renderResearchTab(company: Company) {
+    const trendlyneIntel = findTrendlyneIntelligence(company.ticker, company.name);
+
     if (activeTab === "overview") {
       return (
         <div className="grid-2">
@@ -2429,22 +2490,47 @@ Verify all figures, review primary documents, test thesis killers and complete v
 
     if (activeTab === "ai") {
       return (
-        <div className="grid-2">
-          <section className="panel">
-            <span className="eyebrow">Research instruction</span>
-            <h3>AI analysis prompt</h3>
-            <textarea value={company.aiPrompt} onChange={(event) => updateSelected({ aiPrompt: event.target.value })} />
-            <button style={{ marginTop: 10 }} onClick={generateStructuredAnalysis}>
-              <FileText size={17} /> Generate structured draft
-            </button>
-            <div className="note">The first AI backend will replace this draft generator with real model analysis.</div>
-          </section>
-          <section className="panel">
-            <span className="eyebrow">Research output</span>
-            <h3>Analysis workspace</h3>
-            <textarea value={company.aiOutput} onChange={(event) => updateSelected({ aiOutput: event.target.value })} />
-          </section>
-        </div>
+        <>
+          {trendlyneIntel ? (
+            <section className="panel">
+              <div className="section-head">
+                <div>
+                  <span className="eyebrow">Trendlyne MCP</span>
+                  <h2>Market intelligence pack</h2>
+                </div>
+                <small>{new Date(trendlyneIntel.importedAt).toLocaleString()}</small>
+              </div>
+              <div className="grid-2">
+                <IntelCard title="Overview and DVM" value={trendlyneIntel.overview} />
+                <IntelCard title="Technicals" value={trendlyneIntel.technical} />
+                <IntelCard title="News and announcements" value={trendlyneIntel.news} />
+                <IntelCard title="Corporate events" value={trendlyneIntel.events} />
+                <IntelCard title="Ownership" value={trendlyneIntel.shareholding} />
+                <IntelCard title="Insider / SAST" value={trendlyneIntel.sast} />
+                <IntelCard title="Bulk and block deals" value={trendlyneIntel.bulkBlock} />
+                <IntelCard title="Document search" value={trendlyneIntel.documents} />
+              </div>
+            </section>
+          ) : (
+            <div className="info">Use Fundamentals, then Sync Trendlyne Full, to pull the full Trendlyne intelligence pack for this company.</div>
+          )}
+          <div className="grid-2" style={{ marginTop: 14 }}>
+            <section className="panel">
+              <span className="eyebrow">Research instruction</span>
+              <h3>AI analysis prompt</h3>
+              <textarea value={company.aiPrompt} onChange={(event) => updateSelected({ aiPrompt: event.target.value })} />
+              <button style={{ marginTop: 10 }} onClick={generateStructuredAnalysis}>
+                <FileText size={17} /> Generate structured draft
+              </button>
+              <div className="note">The first AI backend will replace this draft generator with real model analysis.</div>
+            </section>
+            <section className="panel">
+              <span className="eyebrow">Research output</span>
+              <h3>Analysis workspace</h3>
+              <textarea value={company.aiOutput} onChange={(event) => updateSelected({ aiOutput: event.target.value })} />
+            </section>
+          </div>
+        </>
       );
     }
 
@@ -2729,6 +2815,15 @@ function TextCard({ title, value, onChange }: { title: string; value: string; on
     <article className="panel">
       <h3>{title}</h3>
       <textarea value={value} onChange={(event) => onChange(event.target.value)} />
+    </article>
+  );
+}
+
+function IntelCard({ title, value }: { title: string; value: string }) {
+  return (
+    <article className="intel-card">
+      <h3>{title}</h3>
+      <pre>{value || "No Trendlyne data returned for this section."}</pre>
     </article>
   );
 }
