@@ -20,13 +20,19 @@ type SearchResult = {
   source: string;
 };
 
-type TwelveDataSymbol = {
-  symbol?: string;
-  instrument_name?: string;
-  exchange?: string;
-  country?: string;
-  type?: string;
-  currency?: string;
+type KiteInstrument = {
+  instrument_token: string;
+  exchange_token: string;
+  tradingsymbol: string;
+  name: string;
+  last_price: string;
+  expiry: string;
+  strike: string;
+  tick_size: string;
+  lot_size: string;
+  instrument_type: string;
+  segment: string;
+  exchange: string;
 };
 
 const starterCompanies: SearchResult[] = [
@@ -134,6 +140,42 @@ const starterCompanies: SearchResult[] = [
   }
 ];
 
+function parseCsvLine(line: string) {
+  const values: string[] = [];
+  let value = "";
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === '"' && quoted && next === '"') {
+      value += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      values.push(value);
+      value = "";
+    } else {
+      value += char;
+    }
+  }
+
+  values.push(value);
+  return values;
+}
+
+function parseKiteInstruments(csv: string): KiteInstrument[] {
+  const lines = csv.trim().split(/\r?\n/);
+  const headers = parseCsvLine(lines[0]);
+
+  return lines.slice(1).map((line) => {
+    const values = parseCsvLine(line);
+    return Object.fromEntries(headers.map((header, index) => [header, values[index] || ""])) as KiteInstrument;
+  });
+}
+
 function starterSearch(query: string) {
   const needle = query.toLowerCase();
   return starterCompanies.filter((company) =>
@@ -141,13 +183,12 @@ function starterSearch(query: string) {
   );
 }
 
-function normalizeTwelveDataResult(item: TwelveDataSymbol): SearchResult | null {
-  if (!item.symbol || !item.instrument_name) return null;
+function normalizeKiteInstrument(instrument: KiteInstrument): SearchResult {
   return {
-    name: item.instrument_name,
-    ticker: item.symbol,
-    exchange: item.exchange || "",
-    sector: item.type || "",
+    name: instrument.name || instrument.tradingsymbol,
+    ticker: instrument.tradingsymbol,
+    exchange: instrument.exchange,
+    sector: "Equity",
     marketCap: "",
     currentPrice: "",
     pe: "",
@@ -157,9 +198,97 @@ function normalizeTwelveDataResult(item: TwelveDataSymbol): SearchResult | null 
     profitGrowth: "",
     debtEquity: "",
     promoterHolding: "",
-    note: [item.country, item.currency].filter(Boolean).join(" - "),
-    source: "Twelve Data symbol search"
+    note: `Instrument token ${instrument.instrument_token}. Segment ${instrument.segment}.`,
+    source: "Kite Connect instruments"
   };
+}
+
+async function fetchKiteInstruments(query: string) {
+  const response = await fetch("https://api.kite.trade/instruments", {
+    next: { revalidate: 60 * 60 * 12 }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Kite instruments failed with ${response.status}`);
+  }
+
+  const instruments = parseKiteInstruments(await response.text());
+  const needle = query.toLowerCase();
+
+  return instruments
+    .filter((instrument) => ["NSE", "BSE"].includes(instrument.exchange))
+    .filter((instrument) => instrument.instrument_type === "EQ")
+    .filter((instrument) => `${instrument.name} ${instrument.tradingsymbol}`.toLowerCase().includes(needle))
+    .sort((a, b) => relevanceScore(b, needle) - relevanceScore(a, needle))
+    .slice(0, 15)
+    .map(normalizeKiteInstrument);
+}
+
+function relevanceScore(instrument: KiteInstrument, needle: string) {
+  const symbol = instrument.tradingsymbol.toLowerCase();
+  const name = instrument.name.toLowerCase();
+  let scoreValue = 0;
+
+  if (symbol === needle) scoreValue += 1000;
+  if (symbol.startsWith(needle)) scoreValue += 500;
+  if (name === needle) scoreValue += 250;
+  if (name.startsWith(needle)) scoreValue += 150;
+  if (instrument.exchange === "NSE") scoreValue += 25;
+  if (symbol.includes(needle)) scoreValue += 10;
+  if (name.includes(needle)) scoreValue += 5;
+
+  return scoreValue;
+}
+
+async function attachKiteLtp(results: SearchResult[]) {
+  const apiKey = process.env.KITE_API_KEY;
+  const accessToken = process.env.KITE_ACCESS_TOKEN;
+
+  if (!apiKey || !accessToken || results.length === 0) {
+    return {
+      results,
+      message: "Kite instrument search is active. Add KITE_API_KEY and today's KITE_ACCESS_TOKEN in Vercel to enable live LTP."
+    };
+  }
+
+  const params = new URLSearchParams();
+  results.slice(0, 10).forEach((company) => params.append("i", `${company.exchange}:${company.ticker}`));
+
+  const response = await fetch(`https://api.kite.trade/quote/ltp?${params}`, {
+    headers: {
+      "X-Kite-Version": "3",
+      Authorization: `token ${apiKey}:${accessToken}`
+    },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    return {
+      results,
+      message: "Kite search worked, but LTP fetch failed. Refresh the daily Kite access token if it has expired."
+    };
+  }
+
+  const payload = await response.json();
+  const quoteData = payload?.data || {};
+
+  return {
+    results: results.map((company) => {
+      const ltp = quoteData[`${company.exchange}:${company.ticker}`]?.last_price;
+      return {
+        ...company,
+        currentPrice: ltp ? String(ltp) : company.currentPrice,
+        source: ltp ? "Kite Connect instruments + LTP" : company.source
+      };
+    }),
+    message: "Showing Kite Connect instrument results with live LTP where available."
+  };
+}
+
+function dedupeResults(results: SearchResult[]) {
+  return results.filter(
+    (company, index, all) => all.findIndex((item) => item.ticker === company.ticker && item.exchange === company.exchange) === index
+  );
 }
 
 export async function GET(request: Request) {
@@ -167,47 +296,29 @@ export async function GET(request: Request) {
   const query = (url.searchParams.get("q") || "").trim();
 
   if (!query) {
-    return NextResponse.json({ results: starterCompanies, source: "starter" });
+    return NextResponse.json({
+      results: starterCompanies,
+      source: "starter",
+      message: "Type a symbol or company name to search Kite Connect instruments."
+    });
   }
 
-  const apiKey = process.env.TWELVE_DATA_API_KEY;
   const starterMatches = starterSearch(query);
 
-  if (!apiKey) {
-    return NextResponse.json({
-      results: starterMatches,
-      source: "starter",
-      message: "Add TWELVE_DATA_API_KEY in Vercel to enable live symbol search."
-    });
-  }
-
   try {
-    const params = new URLSearchParams({
-      symbol: query,
-      country: "India",
-      apikey: apiKey
-    });
-    const response = await fetch(`https://api.twelvedata.com/symbol_search?${params}`, {
-      next: { revalidate: 3600 }
-    });
-    const payload = await response.json();
-    const apiResults = Array.isArray(payload.data)
-      ? payload.data.map(normalizeTwelveDataResult).filter(Boolean).slice(0, 10)
-      : [];
-    const merged = [...starterMatches, ...apiResults].filter(
-      (company, index, all) => all.findIndex((item) => item.ticker === company.ticker && item.exchange === company.exchange) === index
-    );
+    const kiteMatches = await fetchKiteInstruments(query);
+    const withLtp = await attachKiteLtp(dedupeResults([...starterMatches, ...kiteMatches]));
 
     return NextResponse.json({
-      results: merged,
-      source: apiResults.length ? "twelve-data" : "starter",
-      message: apiResults.length ? undefined : payload.message || "No live API matches found."
+      results: withLtp.results,
+      source: "kite",
+      message: withLtp.message
     });
   } catch {
     return NextResponse.json({
       results: starterMatches,
       source: "starter",
-      message: "Live search failed. Showing starter directory matches."
+      message: "Kite instrument search failed. Showing starter directory matches."
     });
   }
 }

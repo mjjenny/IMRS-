@@ -454,7 +454,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CompanySearchResult[]>(starterCompanies);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchMessage, setSearchMessage] = useState("Starter directory ready. Add a market-data API key for live search.");
+  const [searchMessage, setSearchMessage] = useState("Kite-ready search is available. Live LTP needs Kite credentials.");
   const [screen, setScreen] = useState({ roce: "15", growth: "15", debt: "1", pe: "50" });
 
   useEffect(() => {
@@ -498,7 +498,7 @@ export default function Home() {
           message?: string;
         };
         setSearchResults(payload.results || []);
-        setSearchMessage(payload.message || `Showing ${payload.source === "twelve-data" ? "live API" : "starter directory"} results.`);
+        setSearchMessage(payload.message || `Showing ${payload.source === "kite" ? "Kite Connect" : "starter directory"} results.`);
       } catch {
         if (!controller.signal.aborted) {
           setSearchResults([]);

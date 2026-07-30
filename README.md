@@ -27,7 +27,7 @@ npm audit --omit=dev
 
 This repository is already connected to the existing Vercel project. After changes are pushed to `main`, Vercel should redeploy the same live app URL.
 
-## Market Data
+## Kite Market Data
 
 Company search runs through the app backend at:
 
@@ -35,13 +35,14 @@ Company search runs through the app backend at:
 /api/company-search
 ```
 
-Without an API key, it uses the built-in starter directory. To enable live symbol search, add this environment variable in Vercel:
+Search uses Kite Connect's instrument master. To add live LTP, add these environment variables in Vercel:
 
 ```text
-TWELVE_DATA_API_KEY
+KITE_API_KEY
+KITE_ACCESS_TOKEN
 ```
 
-Then redeploy the project.
+Kite access tokens are session based, so `KITE_ACCESS_TOKEN` may need to be refreshed after login.
 
 The old single-file version is preserved at:
 
