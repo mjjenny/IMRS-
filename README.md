@@ -175,21 +175,33 @@ If `OPENAI_MODEL` is not set, IMRS uses `gpt-5-mini`. The OpenAI key is used onl
 
 The browser never receives the API key. The report page still works without OpenAI by using the rule-based IMRS report.
 
-## PDF Research Reports
+## Final Research Reports
 
-After syncing a company and generating the report, open:
+IMRS is now designed as an evidence collector and report library. The preferred workflow is:
 
 ```text
-Research > Report > Export PDF
+Search company > Data Hub sync > Report > Export Evidence Packet > Codex writes stock-only report > Import Final Report
 ```
 
-IMRS opens a clean print-ready investment committee report containing:
+The final report should discuss only the stock. It should not expose provider names, raw payloads, reconciliation notes, app errors or data-pipeline details to the reader.
+
+## PDF Research Reports
+
+For quick browser PDFs after importing a final report, open:
 
 ```text
-AI report, financials, ownership, scorecard, valuation scenarios, business thesis, risks, catalysts, documents, quarterly reviews and cleaned Trendlyne intelligence
+Report > Export PDF
 ```
 
 In Chrome, choose `Save as PDF` in the print dialog.
+
+For higher-quality Codex-generated PDFs, use the WeasyPrint-ready renderer:
+
+```bash
+python tools/render_report_pdf.py path/to/final-report.json path/to/final-report.pdf
+```
+
+The renderer accepts the same imported report JSON used by IMRS. It uses WeasyPrint when available and keeps the design focused on a polished institutional stock report.
 
 ## Data Automation Roadmap
 
