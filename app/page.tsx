@@ -1146,6 +1146,17 @@ export default function Home() {
     return payload.record;
   }
 
+  async function fetchTrendlyneCompany(symbol: string) {
+    const response = await fetch(`/api/trendlyne/company?symbol=${encodeURIComponent(symbol)}`, {
+      cache: "no-store"
+    });
+    const payload = (await response.json()) as { record?: FundamentalsRecord; error?: string };
+    if (!response.ok || !payload.record) {
+      throw new Error(payload.error || "No Trendlyne MCP record found.");
+    }
+    return payload.record;
+  }
+
   async function syncNseShareholding(company = selected) {
     if (!company?.ticker) {
       window.alert("Select a company with an NSE ticker first.");
@@ -1218,6 +1229,36 @@ export default function Home() {
       });
     } finally {
       setTrendlyneLoading(false);
+    }
+  }
+
+  async function syncTrendlyneCompany(company = selected) {
+    if (!company?.ticker) {
+      window.alert("Select a company with a ticker first.");
+      return;
+    }
+
+    setSyncingSymbol(company.ticker);
+    try {
+      const record = await fetchTrendlyneCompany(company.ticker);
+      const key = record.ticker || company.ticker;
+      setData((current) => ({
+        ...current,
+        fundamentals: { ...current.fundamentals, [key]: record },
+        companies: current.companies.map((item) => {
+          const matchesTicker = item.ticker.toUpperCase() === company.ticker.toUpperCase();
+          const matchesName = normalizeKey(record.companyName).includes(normalizeKey(item.name));
+          return matchesTicker || matchesName ? applyFundamentals(item, record) : item;
+        })
+      }));
+      setSelectedId(company.id);
+      setActivePage("research");
+      setActiveTab("financials");
+      window.alert(`Synced Trendlyne MCP data for ${record.companyName}.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not sync Trendlyne MCP data.");
+    } finally {
+      setSyncingSymbol("");
     }
   }
 
@@ -1874,9 +1915,14 @@ Verify all figures, review primary documents, test thesis killers and complete v
               <span className="eyebrow">Live data connector</span>
               <h2>Trendlyne MCP</h2>
             </div>
-            <button className="secondary" onClick={refreshTrendlyneStatus} disabled={trendlyneLoading}>
-              <Download size={17} /> {trendlyneLoading ? "Checking" : "Check MCP"}
-            </button>
+            <div className="top-actions">
+              <button className="secondary" onClick={refreshTrendlyneStatus} disabled={trendlyneLoading}>
+                <Download size={17} /> {trendlyneLoading ? "Checking" : "Check MCP"}
+              </button>
+              <button onClick={() => syncTrendlyneCompany()} disabled={!selected?.ticker || Boolean(syncingSymbol)}>
+                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync Trendlyne"}
+              </button>
+            </div>
           </div>
           <div className="stats compact-stats">
             <Stat label="MCP URL" value={trendlyneStatus?.urlConfigured ? "Configured" : "Missing"} />

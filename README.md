@@ -137,7 +137,13 @@ The first MCP route is:
 /api/trendlyne/status
 ```
 
-After the available tool names are confirmed from your subscription, the next route will map Trendlyne's financials, ratios, ownership and DVM tools into IMRS company fields automatically.
+The live company sync route is:
+
+```text
+/api/trendlyne/company?symbol=RELIANCE
+```
+
+IMRS calls Trendlyne's entity search, structured parameter, ownership/shareholding and overview tools, then maps the response into the selected company. Use IMRS > Fundamentals > Sync Trendlyne after selecting or importing a company.
 
 ## Data Automation Roadmap
 
