@@ -3,7 +3,7 @@ import nextTypescript from "eslint-config-next/typescript";
 
 const eslintConfig = [
   {
-    ignores: ["node_modules/**", ".next/**", "out/**", "dist/**", "legacy/**"]
+    ignores: ["node_modules/**", ".next/**", ".next-*/**", "out/**", "dist/**", "legacy/**", "trendlyne-*-sample.json"]
   },
   ...nextVitals,
   ...nextTypescript,

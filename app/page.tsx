@@ -575,6 +575,7 @@ function hasMeaningfulText(value: string) {
 function shouldAutoFillText(value: string) {
   const clean = value.trim().toLowerCase();
   if (!clean) return true;
+  if (looksLikeRawTrendlyneText(value)) return true;
   return [
     "replace this sample",
     "map industry size",
@@ -582,12 +583,24 @@ function shouldAutoFillText(value: string) {
     "build the strongest",
     "list every assumption",
     "define evidence requiring",
-    "not yet entered"
+    "not yet entered",
+    "add primary-source evidence",
+    "instrument token"
   ].some((placeholder) => clean.includes(placeholder));
 }
 
 function setIfDraft(current: string, next: string) {
   return shouldAutoFillText(current) && hasMeaningfulText(next) ? next : current;
+}
+
+function looksLikeRawTrendlyneText(value: string) {
+  return /stockHeaders:|tableHeaders:|tableData:|stockData:|newsList:|summaryData:|chartData:|NSEcode\s*\|\s*BSEcode|currentPrice\s*\|\s*dayChangeP|unique_name\s*\|\s*type\s*\|\s*name|isCurtail:\s*(True|False)/i.test(
+    value
+  );
+}
+
+function shouldReplaceGeneratedItem(value: string) {
+  return looksLikeRawTrendlyneText(value) || /trendlyne|growth delivery watch|momentum recovery trigger|negative profit growth|weak capital efficiency|valuation risk/i.test(value);
 }
 
 function metric(value: string, suffix = "") {
@@ -747,21 +760,34 @@ function buildValuationCases(company: Company, record: FundamentalsRecord) {
   const currentPrice = asNumber(record.currentPrice) || asNumber(company.financials.currentPrice);
   const currentPe = asNumber(record.pe) || asNumber(company.financials.pe);
   const reportedEps = asNumber(record.eps) || asNumber(company.financials.eps);
-  const impliedEps = !reportedEps && currentPrice && currentPe ? currentPrice / currentPe : 0;
-  const currentEps = reportedEps || impliedEps;
+  const marketImpliedEps = currentPrice && currentPe ? currentPrice / currentPe : 0;
+  const epsMismatch =
+    Boolean(marketImpliedEps && reportedEps) && Math.abs(reportedEps - marketImpliedEps) / marketImpliedEps > 0.35;
+  const currentEps = epsMismatch ? marketImpliedEps : reportedEps || marketImpliedEps;
   const salesGrowth = asNumber(record.salesGrowth) || asNumber(company.financials.salesGrowth) || 10;
   const profitGrowth = asNumber(record.profitGrowth) || asNumber(company.financials.profitGrowth) || salesGrowth;
-  const baseGrowth = Math.max(-5, Math.min(25, profitGrowth || salesGrowth));
-  const bearGrowth = Math.max(-10, Math.min(baseGrowth - 5, salesGrowth / 2));
-  const bullGrowth = Math.max(baseGrowth + 5, Math.min(35, Math.max(salesGrowth, profitGrowth) + 5));
+  const roe = asNumber(record.roe) || asNumber(company.financials.roe);
+  const roce = asNumber(record.roce) || asNumber(company.financials.roce);
+  const dvmMomentum = asNumber(record.dvmMomentum) || asNumber(company.financials.dvmMomentum);
+  const dvmValuation = asNumber(record.dvmValuation) || asNumber(company.financials.dvmValuation);
+  const weakQuality = (roe > 0 && roe < 12) || (roce > 0 && roce < 12);
+  const negativeProfit = profitGrowth < 0;
+  const weakMomentum = dvmMomentum > 0 && dvmMomentum < 45;
+  const valuationNotCheap = dvmValuation > 0 && dvmValuation < 55;
+  const growthPenalty = [negativeProfit, weakQuality, weakMomentum].filter(Boolean).length;
+  const baseGrowth = negativeProfit ? Math.max(-5, Math.min(6, salesGrowth / 5)) : Math.max(0, Math.min(14, profitGrowth || salesGrowth / 2));
+  const bearGrowth = Math.max(-10, Math.min(baseGrowth - 5, negativeProfit ? -5 : salesGrowth / 3));
+  const bullGrowthCap = growthPenalty >= 2 ? 10 : growthPenalty === 1 ? 14 : 18;
+  const bullGrowth = Math.max(baseGrowth + 3, Math.min(bullGrowthCap, Math.max(salesGrowth / 2, profitGrowth) + 3));
   const basePe = currentPe || 20;
-  const bearPe = Math.max(8, Math.round(basePe * 0.65));
-  const bullPe = Math.min(45, Math.round(basePe * 1.2));
+  const bearPe = Math.max(8, Math.round(basePe * (valuationNotCheap ? 0.55 : 0.65)));
+  const baseExitPe = Math.max(8, Math.round(basePe * (valuationNotCheap ? 0.85 : 1)));
+  const bullPe = Math.min(35, Math.round(basePe * (valuationNotCheap || weakQuality ? 1 : 1.1)));
   const projectEps = (growth: number) => (currentEps ? formatNumber(currentEps * Math.pow(1 + growth / 100, 5)) : "");
 
   return {
     bear: { revenueGrowth: formatNumber(bearGrowth, 1), eps: projectEps(bearGrowth), pe: String(bearPe), probability: "30" },
-    base: { revenueGrowth: formatNumber(baseGrowth, 1), eps: projectEps(baseGrowth), pe: String(Math.round(basePe)), probability: "50" },
+    base: { revenueGrowth: formatNumber(baseGrowth, 1), eps: projectEps(baseGrowth), pe: String(baseExitPe), probability: "50" },
     bull: { revenueGrowth: formatNumber(bullGrowth, 1), eps: projectEps(bullGrowth), pe: String(bullPe), probability: "20" }
   };
 }
@@ -939,9 +965,10 @@ function mergeDocuments(existing: Company["documents"], additions: Company["docu
 }
 
 function mergeRisks(existing: Company["risks"], additions: Company["risks"]) {
-  const names = new Set(existing.map((item) => normalizeKey(item.title)));
+  const cleanedExisting = existing.filter((item) => !shouldReplaceGeneratedItem(`${item.title} ${item.mitigation}`));
+  const names = new Set(cleanedExisting.map((item) => normalizeKey(item.title)));
   return [
-    ...existing,
+    ...cleanedExisting,
     ...additions.filter((item) => {
       const key = normalizeKey(item.title);
       if (names.has(key)) return false;
@@ -952,9 +979,10 @@ function mergeRisks(existing: Company["risks"], additions: Company["risks"]) {
 }
 
 function mergeCatalysts(existing: Company["catalysts"], additions: Company["catalysts"]) {
-  const names = new Set(existing.map((item) => normalizeKey(item.title)));
+  const cleanedExisting = existing.filter((item) => !shouldReplaceGeneratedItem(`${item.title} ${item.notes}`));
+  const names = new Set(cleanedExisting.map((item) => normalizeKey(item.title)));
   return [
-    ...existing,
+    ...cleanedExisting,
     ...additions.filter((item) => {
       const key = normalizeKey(item.title);
       if (names.has(key)) return false;
@@ -3264,7 +3292,7 @@ Verify all figures, review primary documents, test thesis killers and complete v
               <article className="panel valuation-card" key={caseName}>
                 <span className="eyebrow">{caseName} case</span>
                 <label>
-                  Revenue CAGR %
+                  EPS CAGR assumption %
                   <input value={scenario.revenueGrowth} onChange={(event) => updateValuation(caseName, "revenueGrowth", event.target.value)} type="number" />
                 </label>
                 <label>
