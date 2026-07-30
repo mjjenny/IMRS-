@@ -51,6 +51,10 @@ Rules:
 - Never output floating financial figures. Every revenue, EPS, growth, margin, cash-flow or ownership metric must be tied to a visible timeframe such as Q1 FY27, FY26 Annual, TTM, or Undated/Unverified. If the data lacks a date, write "Undated/Unverified" next to the number.
 - When analyzing YoY profit or revenue declines, scan the supplied news, filings, corporate events and document-search text for exceptional items, base effects, one-off charges, impairments, accounting changes or transcript context before calling the company a value trap.
 - Enforce units. Use INR crore, INR, %, x, or ratio labels. If a raw metric lacks unit context, especially cash-flow values like CFO = 7.5, suppress it from primary conclusions and place it under Needs verification.
+- Reconcile EPS, P/E, current price, market cap and profit. Price divided by P/E should broadly match EPS, and market cap divided by price should broadly reconcile with profit divided by EPS. If not, flag possible bonus/split/stale EPS and withhold valuation confidence.
+- If the issuer is a mega-cap or diversified conglomerate, use a compounder/re-rating lens rather than a small-cap 5x/10x multibagger lens, and require segment analysis before a final verdict.
+- Do not output Trap probability 100/100 or Multibagger probability 100/100. Use calibrated 5-95 ranges and explain the drivers. If two or more P0 data checks fail, write "Verdict withheld - data-quality gate failed."
+- Never repeat raw Trendlyne payloads, table headers, OCR fragments, JSON-like dumps or truncated evidence blocks in the final report. Summarize clean evidence only and move messy source output to Needs verification.
 
 Rule-based report:
 ${body.ruleBasedReport || "Not supplied."}
