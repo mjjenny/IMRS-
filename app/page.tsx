@@ -7,7 +7,6 @@ import {
   FileText,
   FlaskConical,
   KeyRound,
-  NotebookText,
   Plus,
   Search,
   Upload
@@ -3004,7 +3003,6 @@ export default function Home() {
   const [trendlyneStatus, setTrendlyneStatus] = useState<TrendlyneStatus | null>(null);
   const [trendlyneLoading, setTrendlyneLoading] = useState(false);
   const [syncingSymbol, setSyncingSymbol] = useState("");
-  const [aiGenerating, setAiGenerating] = useState(false);
   const [reportFetching, setReportFetching] = useState(false);
   const [screen, setScreen] = useState({ roce: "15", growth: "15", debt: "1", pe: "50" });
 
@@ -3730,37 +3728,6 @@ export default function Home() {
     const intelligence = findTrendlyneIntelligence(selected.ticker, selected.name);
     updateSelected({ aiOutput: buildInvestmentReportText(selected, record, intelligence) });
     setActiveTab("report");
-  }
-
-  async function generateOpenAiReport() {
-    if (!selected) return;
-
-    setAiGenerating(true);
-    try {
-      const trendlyneIntel = findTrendlyneIntelligence(selected.ticker, selected.name);
-      const record = findFundamentals(selected.ticker, selected.name);
-      const response = await fetch("/api/ai/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          company: selected,
-          trendlyne: trendlyneIntel,
-          fundamentals: record,
-          ruleBasedReport: buildInvestmentReportText(selected, record, trendlyneIntel)
-        })
-      });
-      const payload = (await response.json()) as { report?: string; error?: string };
-      if (!response.ok || !payload.report) {
-        throw new Error(payload.error || "OpenAI report generation failed.");
-      }
-      saveCodexReport(`${selected.name} - AI Research Report`, payload.report, "ai");
-      setActiveTab("report");
-      window.alert("OpenAI analyst report generated and saved.");
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "OpenAI report generation failed.");
-    } finally {
-      setAiGenerating(false);
-    }
   }
 
   function exportSelectedReportPdf() {
@@ -4814,15 +4781,12 @@ export default function Home() {
                 <button onClick={buildResearchFromSavedData} disabled={!trendlyneIntel}>
                   <FileText size={17} /> Build thesis from Trendlyne
                 </button>
-                <button onClick={generateOpenAiReport} disabled={aiGenerating}>
-                  <NotebookText size={17} /> {aiGenerating ? "Generating..." : "OpenAI report"}
-                </button>
                 <button className="secondary" onClick={generateStructuredAnalysis}>
                   <FileText size={17} /> Manual draft
                 </button>
               </div>
               <div className="note">
-                Trendlyne builds the rule-based evidence pack. OpenAI writes a fuller analyst memo when OPENAI_API_KEY is configured in Vercel.
+                This workspace is for evidence review and rough drafts. Codex writes the final stock-only report, then IMRS fetches or imports it in the Report tab.
               </div>
             </section>
             <section className="panel">
