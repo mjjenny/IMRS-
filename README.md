@@ -102,6 +102,18 @@ Revenue, profit, EPS, sales growth, profit growth, operating margin, report date
 
 It does not yet fill ROE, ROCE, debt/equity or operating cash flow because those require balance-sheet and cash-flow statement detail.
 
+## Trendlyne Rich Fundamentals
+
+Use the Fundamentals page to upload Trendlyne Excel Connect/Data Downloader CSV or XLSX exports. IMRS maps matching columns into the company record.
+
+The importer is designed to fill these richer fields when they are present in the export:
+
+```text
+ROE, ROCE, debt/equity, operating cash flow, FII holding, DII holding, institutional holding, DVM durability, DVM valuation, DVM momentum, analyst score
+```
+
+This is the official-subscription route. IMRS does not scrape Trendlyne pages or store your Trendlyne login. If Trendlyne provides an official API token or live export URL in your account, it can be added later as a background sync.
+
 ## Data Automation Roadmap
 
 Current automated sources:
@@ -117,6 +129,7 @@ Current upload fallback:
 ```text
 Screener Excel: historical financial statements and derived ratios
 NSE CSV: shareholding pattern if NSE sync fails
+Trendlyne export: DVM, analyst, ownership and richer ratio fields
 ```
 
 For fully automated fundamentals, use a licensed provider or an official export workflow such as Trendlyne Excel Connect/Data Downloader or a dedicated financial-data API. Avoid scraping subscription websites.

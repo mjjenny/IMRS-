@@ -43,11 +43,18 @@ type Financials = {
   roce: string;
   debtEquity: string;
   promoterHolding: string;
+  fiiHolding: string;
+  diiHolding: string;
+  institutionalHolding: string;
   salesGrowth: string;
   profitGrowth: string;
   opm: string;
   cfo: string;
   currentPrice: string;
+  dvmDurability: string;
+  dvmValuation: string;
+  dvmMomentum: string;
+  analystScore: string;
 };
 
 type ValuationCase = {
@@ -123,6 +130,13 @@ type FundamentalsRecord = {
   opm: string;
   cfo: string;
   currentPrice: string;
+  fiiHolding: string;
+  diiHolding: string;
+  institutionalHolding: string;
+  dvmDurability: string;
+  dvmValuation: string;
+  dvmMomentum: string;
+  analystScore: string;
 };
 
 type ShareholdingRecord = {
@@ -323,11 +337,18 @@ function blankFinancials(): Financials {
     roce: "",
     debtEquity: "",
     promoterHolding: "",
+    fiiHolding: "",
+    diiHolding: "",
+    institutionalHolding: "",
     salesGrowth: "",
     profitGrowth: "",
     opm: "",
     cfo: "",
-    currentPrice: ""
+    currentPrice: "",
+    dvmDurability: "",
+    dvmValuation: "",
+    dvmMomentum: "",
+    analystScore: ""
   };
 }
 
@@ -447,11 +468,18 @@ function demoCompany(): Company {
       roce: "21",
       debtEquity: "0.35",
       promoterHolding: "58",
+      fiiHolding: "8",
+      diiHolding: "12",
+      institutionalHolding: "20",
       salesGrowth: "22",
       profitGrowth: "28",
       opm: "14",
       cfo: "68",
-      currentPrice: "432"
+      currentPrice: "432",
+      dvmDurability: "62",
+      dvmValuation: "48",
+      dvmMomentum: "71",
+      analystScore: "64"
     },
     valuation: {
       bear: { revenueGrowth: "10", eps: "20", pe: "15", probability: "25" },
@@ -582,6 +610,185 @@ function findDataSheetPath(files: Record<string, Uint8Array>) {
   return `xl/${target.replace(/^\/?xl\//, "")}`;
 }
 
+function findSheetPath(files: Record<string, Uint8Array>, preferredName?: string) {
+  const workbook = parseXml(strFromU8(files["xl/workbook.xml"]));
+  const rels = parseXml(strFromU8(files["xl/_rels/workbook.xml.rels"]));
+  const sheets = Array.from(workbook.getElementsByTagName("sheet"));
+  const chosen =
+    sheets.find((sheet) => preferredName && normalizeKey(sheet.getAttribute("name") || "") === normalizeKey(preferredName)) ||
+    sheets[0];
+  const relId = chosen?.getAttribute("r:id");
+  if (!relId) throw new Error("Workbook sheet not found.");
+
+  const rel = Array.from(rels.getElementsByTagName("Relationship")).find((item) => item.getAttribute("Id") === relId);
+  const target = rel?.getAttribute("Target");
+  if (!target) throw new Error("Workbook sheet target not found.");
+
+  return `xl/${target.replace(/^\/?xl\//, "")}`;
+}
+
+function columnNameToNumber(name: string) {
+  return name.split("").reduce((total, char) => total * 26 + char.charCodeAt(0) - 64, 0);
+}
+
+function cellsToRows(cells: Map<string, string | number>) {
+  const rows: string[][] = [];
+  cells.forEach((value, ref) => {
+    const match = /^([A-Z]+)(\d+)$/i.exec(ref);
+    if (!match) return;
+    const col = columnNameToNumber(match[1].toUpperCase()) - 1;
+    const row = Number(match[2]) - 1;
+    rows[row] ||= [];
+    rows[row][col] = String(value ?? "").trim();
+  });
+  return rows.filter((row) => row.some(Boolean));
+}
+
+function extractWorkbookRows(buffer: ArrayBuffer) {
+  const files = unzipSync(new Uint8Array(buffer));
+  const sharedStrings = files["xl/sharedStrings.xml"] ? parseSharedStrings(strFromU8(files["xl/sharedStrings.xml"])) : [];
+  const sheetPath = findSheetPath(files, "Data");
+  return cellsToRows(parseSheet(strFromU8(files[sheetPath]), sharedStrings));
+}
+
+function cleanImportedValue(value: string | undefined) {
+  if (!value) return "";
+  const trimmed = value.replace(/[,₹%]/g, "").trim();
+  if (!trimmed || trimmed === "-" || /^na$/i.test(trimmed)) return "";
+  const numeric = Number(trimmed);
+  return Number.isFinite(numeric) ? formatNumber(numeric) : value.trim();
+}
+
+const trendlyneAliases: Record<keyof Pick<
+  FundamentalsRecord,
+  | "companyName"
+  | "ticker"
+  | "marketCap"
+  | "revenue"
+  | "profit"
+  | "eps"
+  | "pe"
+  | "roe"
+  | "roce"
+  | "debtEquity"
+  | "salesGrowth"
+  | "profitGrowth"
+  | "opm"
+  | "cfo"
+  | "currentPrice"
+  | "fiiHolding"
+  | "diiHolding"
+  | "institutionalHolding"
+  | "dvmDurability"
+  | "dvmValuation"
+  | "dvmMomentum"
+  | "analystScore"
+>, string[]> = {
+  companyName: ["company", "company name", "stock name", "name"],
+  ticker: ["ticker", "symbol", "nse code", "nse symbol"],
+  marketCap: ["market cap", "market capitalization", "mcap"],
+  revenue: ["sales", "revenue", "net sales", "total income"],
+  profit: ["net profit", "profit after tax", "pat", "profit"],
+  eps: ["eps", "earnings per share"],
+  pe: ["pe", "p/e", "price to earnings", "price earnings"],
+  roe: ["roe", "return on equity"],
+  roce: ["roce", "return on capital employed"],
+  debtEquity: ["debt/equity", "debt equity", "debt to equity", "d/e"],
+  salesGrowth: ["sales growth", "revenue growth"],
+  profitGrowth: ["profit growth", "pat growth", "net profit growth"],
+  opm: ["opm", "operating margin", "operating profit margin"],
+  cfo: ["operating cash flow", "cash from operations", "cash flow from operations", "cfo"],
+  currentPrice: ["current price", "price", "ltp", "last traded price"],
+  fiiHolding: ["fii", "fii holding", "foreign institutional", "foreign institutions"],
+  diiHolding: ["dii", "dii holding", "domestic institutional", "domestic institutions"],
+  institutionalHolding: ["institutional holding", "institutional", "institutions", "total institutions"],
+  dvmDurability: ["dvm durability", "durability", "durability score"],
+  dvmValuation: ["dvm valuation", "valuation score", "valuation"],
+  dvmMomentum: ["dvm momentum", "momentum", "momentum score"],
+  analystScore: ["analyst score", "analyst rating", "broker score", "recommendation score", "broker recommendation"]
+};
+
+function aliasMatches(value: string, aliases: string[]) {
+  const key = normalizeKey(value);
+  return aliases.some((alias) => key === normalizeKey(alias) || key.includes(normalizeKey(alias)));
+}
+
+function valueFromKeyValueRows(rows: string[][], aliases: string[]) {
+  for (const row of rows) {
+    for (let index = 0; index < row.length; index += 1) {
+      if (!aliasMatches(row[index] || "", aliases)) continue;
+      const value = row.slice(index + 1).find((cell) => cleanImportedValue(cell));
+      if (value) return cleanImportedValue(value);
+    }
+  }
+  return "";
+}
+
+function valuesFromHeaderRows(rows: string[][], fallbackTicker = "") {
+  const output: Partial<Record<keyof typeof trendlyneAliases, string>> = {};
+  const fields = Object.keys(trendlyneAliases) as Array<keyof typeof trendlyneAliases>;
+
+  for (let headerIndex = 0; headerIndex < Math.min(rows.length, 20); headerIndex += 1) {
+    const headers = rows[headerIndex] || [];
+    const matchedFields = fields.filter((field) => headers.some((header) => aliasMatches(header || "", trendlyneAliases[field])));
+    if (matchedFields.length < 2) continue;
+
+    const tickerColumn = headers.findIndex((header) => aliasMatches(header || "", trendlyneAliases.ticker));
+    const dataRows = rows.slice(headerIndex + 1).filter((row) => row.some(Boolean));
+    const matchedRow =
+      fallbackTicker && tickerColumn >= 0
+        ? dataRows.find((row) => normalizeKey(row[tickerColumn] || "") === normalizeKey(fallbackTicker))
+        : dataRows[0];
+
+    if (!matchedRow) continue;
+    matchedFields.forEach((field) => {
+      const column = headers.findIndex((header) => aliasMatches(header || "", trendlyneAliases[field]));
+      if (column >= 0 && matchedRow[column]) output[field] = cleanImportedValue(matchedRow[column]);
+    });
+    break;
+  }
+
+  return output;
+}
+
+function extractTrendlyneRows(rows: string[][], fallbackTicker = "", fallbackCompany = ""): FundamentalsRecord {
+  const byHeader = valuesFromHeaderRows(rows, fallbackTicker);
+  const valueFor = (field: keyof typeof trendlyneAliases) =>
+    byHeader[field] || valueFromKeyValueRows(rows, trendlyneAliases[field]);
+
+  const companyName = valueFor("companyName") || fallbackCompany || "Trendlyne company";
+  const ticker = (valueFor("ticker") || fallbackTicker).toUpperCase();
+
+  return {
+    id: uid(),
+    companyName,
+    ticker,
+    source: "Trendlyne export",
+    importedAt: new Date().toISOString(),
+    reportDate: "",
+    marketCap: valueFor("marketCap"),
+    revenue: valueFor("revenue"),
+    profit: valueFor("profit"),
+    eps: valueFor("eps"),
+    pe: valueFor("pe"),
+    roe: valueFor("roe"),
+    roce: valueFor("roce"),
+    debtEquity: valueFor("debtEquity"),
+    salesGrowth: valueFor("salesGrowth"),
+    profitGrowth: valueFor("profitGrowth"),
+    opm: valueFor("opm"),
+    cfo: valueFor("cfo"),
+    currentPrice: valueFor("currentPrice"),
+    fiiHolding: valueFor("fiiHolding"),
+    diiHolding: valueFor("diiHolding"),
+    institutionalHolding: valueFor("institutionalHolding"),
+    dvmDurability: valueFor("dvmDurability"),
+    dvmValuation: valueFor("dvmValuation"),
+    dvmMomentum: valueFor("dvmMomentum"),
+    analystScore: valueFor("analystScore")
+  };
+}
+
 function extractScreenerWorkbook(buffer: ArrayBuffer, fallbackTicker = ""): FundamentalsRecord {
   const files = unzipSync(new Uint8Array(buffer));
   const sharedStrings = files["xl/sharedStrings.xml"] ? parseSharedStrings(strFromU8(files["xl/sharedStrings.xml"])) : [];
@@ -637,7 +844,14 @@ function extractScreenerWorkbook(buffer: ArrayBuffer, fallbackTicker = ""): Fund
     profitGrowth: priorProfit ? formatNumber(((profit / priorProfit) - 1) * 100) : "",
     opm: sales ? formatNumber((operatingProfit / sales) * 100) : "",
     cfo: formatNumber(Number(getCell(cells, 82, latestCol)) || 0, 0),
-    currentPrice: formatNumber(currentPrice)
+    currentPrice: formatNumber(currentPrice),
+    fiiHolding: "",
+    diiHolding: "",
+    institutionalHolding: "",
+    dvmDurability: "",
+    dvmValuation: "",
+    dvmMomentum: "",
+    analystScore: ""
   };
 }
 
@@ -862,11 +1076,18 @@ export default function Home() {
         roe: record.roe || company.financials.roe,
         roce: record.roce || company.financials.roce,
         debtEquity: record.debtEquity || company.financials.debtEquity,
+        fiiHolding: record.fiiHolding || company.financials.fiiHolding,
+        diiHolding: record.diiHolding || company.financials.diiHolding,
+        institutionalHolding: record.institutionalHolding || company.financials.institutionalHolding,
         salesGrowth: record.salesGrowth || company.financials.salesGrowth,
         profitGrowth: record.profitGrowth || company.financials.profitGrowth,
         opm: record.opm || company.financials.opm,
         cfo: record.cfo || company.financials.cfo,
-        currentPrice: company.financials.currentPrice || record.currentPrice
+        currentPrice: company.financials.currentPrice || record.currentPrice,
+        dvmDurability: record.dvmDurability || company.financials.dvmDurability,
+        dvmValuation: record.dvmValuation || company.financials.dvmValuation,
+        dvmMomentum: record.dvmMomentum || company.financials.dvmMomentum,
+        analystScore: record.analystScore || company.financials.analystScore
       }
     };
   }
@@ -1116,6 +1337,47 @@ export default function Home() {
     }
   }
 
+  async function importTrendlyne(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const rows = file.name.toLowerCase().endsWith(".csv")
+        ? parseCsv(await file.text())
+        : extractWorkbookRows(await file.arrayBuffer());
+      const extracted = extractTrendlyneRows(rows, selected?.ticker || "", selected?.name || "");
+      const nameMatch = data.companies.find((company) => {
+        const tickerMatch = extracted.ticker && company.ticker.toUpperCase() === extracted.ticker.toUpperCase();
+        const recordName = normalizeKey(extracted.companyName);
+        const companyName = normalizeKey(company.name);
+        return tickerMatch || recordName.includes(companyName) || companyName.includes(recordName);
+      });
+      const record = { ...extracted, ticker: nameMatch?.ticker || extracted.ticker };
+      const key = record.ticker || normalizeKey(record.companyName);
+      const nextFundamentals = { ...data.fundamentals, [key]: record };
+      const matchedCompany = data.companies.find((company) => findFundamentals(company.ticker, company.name, nextFundamentals));
+
+      setData((current) => ({
+        ...current,
+        fundamentals: nextFundamentals,
+        companies: current.companies.map((company) => {
+          const match = findFundamentals(company.ticker, company.name, nextFundamentals);
+          return match ? applyFundamentals(company, match) : company;
+        })
+      }));
+
+      if (matchedCompany) {
+        setSelectedId(matchedCompany.id);
+      }
+      setActivePage("fundamentals");
+      window.alert(`Imported Trendlyne data for ${record.companyName}.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not import this Trendlyne export.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   async function importShareholding(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1195,7 +1457,11 @@ Revenue INR ${f.revenue || "-"} crore; Profit INR ${f.profit || "-"} crore; ROCE
       f.roe || "-"
     }%; Sales growth ${f.salesGrowth || "-"}%; Profit growth ${f.profitGrowth || "-"}%; Debt/Equity ${
       f.debtEquity || "-"
-    }; P/E ${f.pe || "-"}.
+    }; P/E ${f.pe || "-"}; Promoter ${f.promoterHolding || "-"}%; FII ${f.fiiHolding || "-"}%; DII ${
+      f.diiHolding || "-"
+    }%; DVM ${f.dvmDurability || "-"}/${f.dvmValuation || "-"}/${f.dvmMomentum || "-"}; Analyst score ${
+      f.analystScore || "-"
+    }.
 
 Management:
 ${selected.managementAssessment || "Management assessment not yet entered."}
@@ -1562,7 +1828,7 @@ Verify all figures, review primary documents, test thesis killers and complete v
     return (
       <>
         <PageHead eyebrow="Source-backed data" title="Fundamentals Import">
-          Upload Screener Excel exports and NSE shareholding CSV files once, then IMRS auto-fills matching companies.
+          Combine Kite prices, NSE filings, Screener workbooks and Trendlyne exports into one company record.
         </PageHead>
         <section className="panel">
           <div className="section-head">
@@ -1579,6 +1845,26 @@ Verify all figures, review primary documents, test thesis killers and complete v
             profit growth and operating margin where available.
           </div>
           <div className="note">ROE, ROCE, debt/equity and cash-flow metrics still need richer balance-sheet data from Trendlyne or another licensed source.</div>
+        </section>
+        <section className="panel" style={{ marginTop: 14 }}>
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Subscription data</span>
+              <h2>Trendlyne Export</h2>
+            </div>
+            <label className="file-button">
+              <Upload size={17} /> Upload Trendlyne
+              <input type="file" accept=".csv,.xlsx" onChange={importTrendlyne} />
+            </label>
+          </div>
+          <div className="info">
+            Use Trendlyne Excel Connect/Data Downloader exports for richer fields such as ROE, ROCE, debt/equity, operating cash
+            flow, FII/DII holding, institutional ownership, DVM scores and analyst score.
+          </div>
+          <div className="note">
+            This uses your official export file. A direct background sync can be added later if Trendlyne provides an official API or
+            live export URL for your subscription.
+          </div>
         </section>
         <section className="panel" style={{ marginTop: 14 }}>
           <div className="section-head">
@@ -1637,6 +1923,9 @@ Verify all figures, review primary documents, test thesis killers and complete v
                   <th>Profit</th>
                   <th>ROCE</th>
                   <th>ROE</th>
+                  <th>FII</th>
+                  <th>DII</th>
+                  <th>DVM</th>
                 </tr>
               </thead>
               <tbody>
@@ -1652,11 +1941,16 @@ Verify all figures, review primary documents, test thesis killers and complete v
                     <td>{record.profit || "-"}</td>
                     <td>{record.roce ? `${record.roce}%` : "-"}</td>
                     <td>{record.roe ? `${record.roe}%` : "-"}</td>
+                    <td>{record.fiiHolding ? `${record.fiiHolding}%` : "-"}</td>
+                    <td>{record.diiHolding ? `${record.diiHolding}%` : "-"}</td>
+                    <td>
+                      {[record.dvmDurability, record.dvmValuation, record.dvmMomentum].filter(Boolean).join(" / ") || "-"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {records.length === 0 ? <p>No Screener exports imported yet.</p> : null}
+            {records.length === 0 ? <p>No Screener or Trendlyne exports imported yet.</p> : null}
           </div>
         </section>
         <section className="panel" style={{ marginTop: 14 }}>
@@ -1799,11 +2093,18 @@ Verify all figures, review primary documents, test thesis killers and complete v
         ["roce", "ROCE %"],
         ["debtEquity", "Debt/Equity"],
         ["promoterHolding", "Promoter holding %"],
+        ["fiiHolding", "FII holding %"],
+        ["diiHolding", "DII holding %"],
+        ["institutionalHolding", "Institutional holding %"],
         ["salesGrowth", "Sales growth %"],
         ["profitGrowth", "Profit growth %"],
         ["opm", "Operating margin %"],
         ["cfo", "Operating cash flow INR crore"],
-        ["currentPrice", "Current price INR"]
+        ["currentPrice", "Current price INR"],
+        ["dvmDurability", "DVM durability score"],
+        ["dvmValuation", "DVM valuation score"],
+        ["dvmMomentum", "DVM momentum score"],
+        ["analystScore", "Analyst score"]
       ];
       return (
         <>
