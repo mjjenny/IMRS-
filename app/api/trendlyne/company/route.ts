@@ -72,6 +72,7 @@ const metricHeadingAliases: Partial<Record<keyof TrendlyneRecord, string[]>> = {
   pe: ["pe 3yr average", "pe 5yr average", "pe"],
   roe: ["roe ann", "return on equity"],
   roce: ["roce ann", "return on capital employed"],
+  debtEquity: ["debt to equity", "debt equity", "debt/equity"],
   salesGrowth: ["rev. growth qtr yoy", "revenue growth", "sales growth"],
   profitGrowth: ["net profit qtr growth yoy", "operating profit growth qtr yoy", "profit growth"],
   opm: ["opm qtr yoy", "operating profit margin", "operating margin"],
@@ -314,11 +315,19 @@ export async function GET(request: NextRequest) {
     const entity = findEntity(entityCall.data, symbol);
     const stockCode = entity?.nse_code || entity?.bse_code || entity?.isin || symbol;
 
-    const [parametersCall, ownershipCall, overviewCall] = await Promise.all([
+    const [parametersCall, ratioCall, cashFlowCall, ownershipCall, overviewCall] = await Promise.all([
       callTrendlyneTool(client, "get_parameter_values_multi_stock", {
         query:
           `${stockCode} latest market cap revenue net profit EPS PE ratio ROE ROCE debt to equity ` +
           "operating cash flow sales growth profit growth operating profit margin DVM durability valuation momentum analyst score",
+        type: "stock"
+      }),
+      callTrendlyneTool(client, "get_parameter_values_multi_stock", {
+        query: `${stockCode} ROE annual ROCE annual return on equity return on capital employed debt to equity annual financial ratios`,
+        type: "stock"
+      }),
+      callTrendlyneTool(client, "get_parameter_values_multi_stock", {
+        query: `${stockCode} operating cash flow annual cash flow from operations CFO revenue annual net profit annual EPS annual`,
         type: "stock"
       }),
       callTrendlyneTool(client, "get_ownership_deals_insider_sast", {
@@ -331,7 +340,7 @@ export async function GET(request: NextRequest) {
       })
     ]);
 
-    const sources = [parametersCall.data, ownershipCall.data, overviewCall.data, entityCall.data];
+    const sources = [parametersCall.data, ratioCall.data, cashFlowCall.data, ownershipCall.data, overviewCall.data, entityCall.data];
     const allText = sources.map(stringifySource).join("\n");
     const metrics = parseMetricBlocks(allText, stockCode);
     const identity = stockDataIdentity(allText);
@@ -377,6 +386,8 @@ export async function GET(request: NextRequest) {
       transport: connection.transportType,
       raw: {
         parameters: parametersCall.data,
+        ratios: ratioCall.data,
+        cashFlow: cashFlowCall.data,
         ownership: ownershipCall.data,
         overview: overviewCall.data
       }
