@@ -180,12 +180,32 @@ The browser never receives the API key. The report page still works without Open
 IMRS is now designed as an evidence collector and report library. The preferred workflow is:
 
 ```text
-Search company > Data Hub sync > Report > Export Rich Packet > Codex writes stock-only report > Import Final Report
+Search company > Data Hub sync > Report > Export Rich Packet > Codex writes stock-only report > Fetch Generated Report
 ```
 
 The final report should discuss only the stock. It should not expose provider names, raw payloads, reconciliation notes, app errors or data-pipeline details to the reader.
 
 The exported packet is intentionally different from a normal app backup. It contains cleaned, analyst-ready sections: company profile, validated financial metrics with units and periods, ownership evidence, market and event evidence, saved research notes, risk/catalyst trackers, scorecard, valuation sanity checks and a report brief for Codex. Raw table dumps are suppressed from the primary packet so the final report starts from readable evidence instead of connector output.
+
+Codex-generated final reports can be published inside the app at:
+
+```text
+public/reports/TICKER.json
+```
+
+Example:
+
+```text
+public/reports/MTARTECH.json
+```
+
+After deployment, open the company record and click:
+
+```text
+Report > Fetch Generated Report
+```
+
+Manual upload with `Import Final Report` remains available as a fallback.
 
 ## PDF Research Reports
 

@@ -70,6 +70,13 @@ type CodexReport = {
   content: string;
 };
 
+type CodexReportPayload = {
+  title?: string;
+  report?: string;
+  content?: string;
+  markdown?: string;
+};
+
 type Company = {
   id: string;
   name: string;
@@ -2998,6 +3005,7 @@ export default function Home() {
   const [trendlyneLoading, setTrendlyneLoading] = useState(false);
   const [syncingSymbol, setSyncingSymbol] = useState("");
   const [aiGenerating, setAiGenerating] = useState(false);
+  const [reportFetching, setReportFetching] = useState(false);
   const [screen, setScreen] = useState({ roce: "15", growth: "15", debt: "1", pe: "50" });
 
   useEffect(() => {
@@ -3453,44 +3461,85 @@ export default function Home() {
     );
   }
 
+  function reportContentFromPayload(text: string, fallbackTitle: string) {
+    let title = fallbackTitle;
+    let content = text;
+    let format = fallbackTitle.split(".").pop()?.toLowerCase() || "txt";
+
+    if (format === "json") {
+      const parsed = JSON.parse(text) as CodexReportPayload;
+      title = parsed.title || fallbackTitle.replace(/\.[^.]+$/, "");
+      content = parsed.report || parsed.markdown || parsed.content || text;
+      format = "json";
+    } else {
+      title = fallbackTitle.replace(/\.[^.]+$/, "");
+    }
+
+    if (!content.trim()) throw new Error("The report file is empty.");
+    return { title, content, format };
+  }
+
+  function saveCodexReport(title: string, content: string, format: string) {
+    if (!selected) return;
+    const importedReport: CodexReport = {
+      id: uid(),
+      title,
+      importedAt: new Date().toISOString(),
+      format,
+      content
+    };
+
+    updateSelected({
+      aiOutput: content,
+      codexReports: [importedReport, ...(selected.codexReports || [])],
+      documents: mergeDocuments(selected.documents, [{ name: title, type: "Other", status: "Key Source" }])
+    });
+    setActiveTab("report");
+  }
+
   async function importCodexReport(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || !selected) return;
 
     try {
-      const text = await file.text();
-      let title = file.name.replace(/\.[^.]+$/, "");
-      let content = text;
-      let format = file.name.split(".").pop()?.toLowerCase() || "txt";
-
-      if (format === "json") {
-        const parsed = JSON.parse(text) as { title?: string; report?: string; content?: string; markdown?: string };
-        title = parsed.title || title;
-        content = parsed.report || parsed.markdown || parsed.content || text;
-        format = "json";
-      }
-
-      if (!content.trim()) throw new Error("The report file is empty.");
-
-      const importedReport: CodexReport = {
-        id: uid(),
-        title,
-        importedAt: new Date().toISOString(),
-        format,
-        content
-      };
-
-      updateSelected({
-        aiOutput: content,
-        codexReports: [importedReport, ...(selected.codexReports || [])],
-        documents: mergeDocuments(selected.documents, [{ name: title, type: "Other", status: "Key Source" }])
-      });
-      setActiveTab("report");
+      const { title, content, format } = reportContentFromPayload(await file.text(), file.name);
+      saveCodexReport(title, content, format);
       window.alert("Codex report imported into this company record.");
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not import this Codex report.");
     } finally {
       event.target.value = "";
+    }
+  }
+
+  async function fetchGeneratedReport(company = selected) {
+    if (!company?.ticker) {
+      window.alert("Select a company with a ticker first.");
+      return;
+    }
+
+    const lookupSymbol = externalLookupTicker(company.ticker);
+    const candidates = Array.from(new Set([lookupSymbol, company.ticker.toUpperCase()])).map((symbol) => `/reports/${encodeURIComponent(symbol)}.json`);
+    setReportFetching(true);
+    try {
+      let response: Response | undefined;
+      let reportUrl = "";
+      for (const url of candidates) {
+        const attempt = await fetch(url, { cache: "no-store" });
+        if (attempt.ok) {
+          response = attempt;
+          reportUrl = url;
+          break;
+        }
+      }
+      if (!response) throw new Error(`No generated report found for ${lookupSymbol}. Generate it into public/reports/${lookupSymbol}.json and redeploy.`);
+      const { title, content, format } = reportContentFromPayload(await response.text(), reportUrl.split("/").pop() || `${lookupSymbol}.json`);
+      saveCodexReport(title, content, format);
+      window.alert(`Fetched generated report for ${lookupSymbol}.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not fetch the generated report.");
+    } finally {
+      setReportFetching(false);
     }
   }
 
@@ -3704,9 +3753,9 @@ export default function Home() {
       if (!response.ok || !payload.report) {
         throw new Error(payload.error || "OpenAI report generation failed.");
       }
-      updateSelected({ aiOutput: payload.report });
+      saveCodexReport(`${selected.name} - AI Research Report`, payload.report, "ai");
       setActiveTab("report");
-      window.alert("OpenAI analyst report generated.");
+      window.alert("OpenAI analyst report generated and saved.");
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "OpenAI report generation failed.");
     } finally {
@@ -4469,6 +4518,9 @@ export default function Home() {
                 <Upload size={17} /> Import Final Report
                 <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} />
               </label>
+              <button className="secondary" onClick={() => fetchGeneratedReport()} disabled={!selected?.ticker || reportFetching}>
+                <FileText size={17} /> {reportFetching ? "Fetching" : "Fetch Generated Report"}
+              </button>
               <button className="secondary" onClick={exportSelectedReportPdf} disabled={!reportText.trim()}>
                 <FileDown size={17} /> Export PDF
               </button>
@@ -4528,6 +4580,9 @@ export default function Home() {
                   <Upload size={17} /> Import Report
                   <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} />
                 </label>
+                <button className="secondary" onClick={() => fetchGeneratedReport()} disabled={!selected?.ticker || reportFetching}>
+                  <FileText size={17} /> {reportFetching ? "Fetching" : "Fetch Report"}
+                </button>
               </div>
             </div>
             {company.codexReports?.length ? (
