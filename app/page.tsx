@@ -895,6 +895,17 @@ export default function Home() {
     return payload.record;
   }
 
+  async function fetchNseFinancials(symbol: string) {
+    const response = await fetch(`/api/nse/financials?symbol=${encodeURIComponent(symbol)}`, {
+      cache: "no-store"
+    });
+    const payload = (await response.json()) as { record?: FundamentalsRecord; error?: string };
+    if (!response.ok || !payload.record) {
+      throw new Error(payload.error || "No NSE financial result found.");
+    }
+    return payload.record;
+  }
+
   async function syncNseShareholding(company = selected) {
     if (!company?.ticker) {
       window.alert("Select a company with an NSE ticker first.");
@@ -923,6 +934,34 @@ export default function Home() {
     }
   }
 
+  async function syncNseFinancials(company = selected) {
+    if (!company?.ticker) {
+      window.alert("Select a company with an NSE ticker first.");
+      return;
+    }
+
+    setSyncingSymbol(company.ticker);
+    try {
+      const record = await fetchNseFinancials(company.ticker);
+      const key = record.ticker || company.ticker;
+      setData((current) => ({
+        ...current,
+        fundamentals: { ...current.fundamentals, [key]: record },
+        companies: current.companies.map((item) => {
+          const matchesTicker = item.ticker.toUpperCase() === company.ticker.toUpperCase();
+          const matchesName = normalizeKey(record.companyName).includes(normalizeKey(item.name));
+          return matchesTicker || matchesName ? applyFundamentals(item, record) : item;
+        })
+      }));
+      setSelectedId(company.id);
+      window.alert(`Synced NSE financials for ${record.companyName}: sales INR ${record.revenue || "-"} cr.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not sync NSE financials.");
+    } finally {
+      setSyncingSymbol("");
+    }
+  }
+
   function createCompany() {
     const company = blankCompany();
     setData((current) => ({ ...current, companies: [company, ...current.companies] }));
@@ -938,6 +977,9 @@ export default function Home() {
       setActivePage("research");
       if (!existing.financials.promoterHolding) {
         await syncNseShareholding(existing);
+      }
+      if (!existing.financials.revenue || !existing.financials.profit) {
+        await syncNseFinancials(existing);
       }
       return;
     }
@@ -965,22 +1007,32 @@ export default function Home() {
       }
     };
     let fetchedShareholding: ShareholdingRecord | undefined;
+    let fetchedFinancials: FundamentalsRecord | undefined;
     setSyncingSymbol(item.ticker);
     try {
-      fetchedShareholding = item.exchange === "NSE" || item.source?.includes("Kite") ? await fetchNseShareholding(item.ticker) : undefined;
+      if (item.exchange === "NSE" || item.source?.includes("Kite")) {
+        [fetchedShareholding, fetchedFinancials] = await Promise.all([
+          fetchNseShareholding(item.ticker).catch(() => undefined),
+          fetchNseFinancials(item.ticker).catch(() => undefined)
+        ]);
+      }
     } catch {
       fetchedShareholding = undefined;
+      fetchedFinancials = undefined;
     } finally {
       setSyncingSymbol("");
     }
 
     const matchedShareholding = fetchedShareholding || findShareholding(item.ticker, item.name);
-    const enrichedCompany = applyShareholding(applyFundamentals(company, findFundamentals(item.ticker, item.name)), matchedShareholding);
+    const matchedFinancials = fetchedFinancials || findFundamentals(item.ticker, item.name);
+    const enrichedCompany = applyShareholding(applyFundamentals(company, matchedFinancials), matchedShareholding);
     const shareholdingKey = fetchedShareholding?.ticker || item.ticker;
+    const fundamentalsKey = fetchedFinancials?.ticker || item.ticker;
 
     setData((current) => ({
       ...current,
       shareholding: fetchedShareholding ? { ...current.shareholding, [shareholdingKey]: fetchedShareholding } : current.shareholding,
+      fundamentals: fetchedFinancials ? { ...current.fundamentals, [fundamentalsKey]: fetchedFinancials } : current.fundamentals,
       companies: [enrichedCompany, ...current.companies]
     }));
     setSelectedId(enrichedCompany.id);
@@ -1515,7 +1567,23 @@ Verify all figures, review primary documents, test thesis killers and complete v
         <section className="panel">
           <div className="section-head">
             <div>
-              <span className="eyebrow">Import center</span>
+              <span className="eyebrow">Exchange filing</span>
+              <h2>NSE Financial Results</h2>
+            </div>
+            <button className="secondary" onClick={() => syncNseFinancials()} disabled={!selected?.ticker || Boolean(syncingSymbol)}>
+              <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync NSE Financials"}
+            </button>
+          </div>
+          <div className="info">
+            IMRS syncs annual NSE financial-result filings for the selected company and fills revenue, profit, EPS, sales growth,
+            profit growth and operating margin where available.
+          </div>
+          <div className="note">ROE, ROCE, debt/equity and cash-flow metrics still need richer balance-sheet data from Trendlyne or another licensed source.</div>
+        </section>
+        <section className="panel" style={{ marginTop: 14 }}>
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Upload fallback</span>
               <h2>Screener Excel</h2>
             </div>
             <label className="file-button">

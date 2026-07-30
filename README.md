@@ -86,6 +86,22 @@ Promoter holding %, public holding %, employee trust holding %, as-on date, subm
 
 This is the preferred source for promoter holding because it comes from the exchange filing rather than the Screener workbook.
 
+## NSE Financial Results
+
+IMRS automatically attempts to sync annual NSE financial-result filings when an NSE company is imported from search. It uses:
+
+```text
+/api/nse/financials
+```
+
+The current importer fills:
+
+```text
+Revenue, profit, EPS, sales growth, profit growth, operating margin, report date
+```
+
+It does not yet fill ROE, ROCE, debt/equity or operating cash flow because those require balance-sheet and cash-flow statement detail.
+
 ## Data Automation Roadmap
 
 Current automated sources:
@@ -93,6 +109,7 @@ Current automated sources:
 ```text
 Kite Connect: instruments and live LTP
 NSE: shareholding pattern summary
+NSE: annual financial-result filings
 ```
 
 Current upload fallback:
@@ -103,6 +120,14 @@ NSE CSV: shareholding pattern if NSE sync fails
 ```
 
 For fully automated fundamentals, use a licensed provider or an official export workflow such as Trendlyne Excel Connect/Data Downloader or a dedicated financial-data API. Avoid scraping subscription websites.
+
+Target production stack:
+
+```text
+Kite: price, OHLC, volume, instruments
+NSE/BSE: exchange filings, shareholding, results, XBRL links
+Trendlyne: richer fundamentals, ratios, DVM/analyst/ownership data if official export/API access is available
+```
 
 The old single-file version is preserved at:
 
