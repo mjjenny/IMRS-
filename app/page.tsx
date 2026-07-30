@@ -2,19 +2,15 @@
 
 import {
   BarChart3,
-  BriefcaseBusiness,
-  Database,
   Download,
   FileDown,
   FileText,
   FlaskConical,
-  Gauge,
   KeyRound,
   NotebookText,
   Plus,
   Search,
-  Upload,
-  Users
+  Upload
 } from "lucide-react";
 import { strFromU8, unzipSync } from "fflate";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
@@ -270,15 +266,8 @@ const scoreLabels: Record<ScoreKey, string> = {
 const tabs: Array<[TabId, string]> = [
   ["overview", "Overview"],
   ["financials", "Financials"],
-  ["scorecard", "Scorecard"],
   ["report", "Report"],
-  ["thesis", "Thesis"],
-  ["risks", "Risks"],
-  ["catalysts", "Catalysts"],
-  ["documents", "Documents"],
-  ["ai", "AI Analysis"],
-  ["reviews", "Quarterly Reviews"],
-  ["valuation", "Valuation"]
+  ["documents", "Documents"]
 ];
 
 const starterCompanies: CompanySearchResult[] = [
@@ -1123,10 +1112,6 @@ function scrubReportText(value: string) {
     .trim();
 }
 
-function reportTextForCompany(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
-  return scrubReportText(company.aiOutput) || buildInvestmentReportText(company, record, intelligence);
-}
-
 function savedResearchText(value: string, fallback: string) {
   return scrubReportText(value) || fallback;
 }
@@ -1289,7 +1274,10 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
   const review = dataQualityReview(company, record, trendlyneIntel);
   const bullets = getReportBullets(company, record);
   const generatedAt = new Date().toLocaleString("en-IN");
-  const reportText = reportTextForCompany(company, record, trendlyneIntel);
+  const reportText =
+    company.codexReports?.[0]?.content ||
+    scrubReportText(company.aiOutput) ||
+    "No final stock research report has been imported for this company yet.";
   const sanity = sanityCheckItems(company, record, trendlyneIntel);
   const needsVerification = needsVerificationItems(company, record, trendlyneIntel);
   const cfoDisplay = validatedMetric(company, record, "cfo", "INR crore");
@@ -3448,27 +3436,50 @@ export default function Home() {
 
   function renderDashboard() {
     const companies = data.companies;
-    const average = companies.length ? Math.round(companies.reduce((sum, company) => sum + score(company), 0) / companies.length) : 0;
-    const owned = companies.filter((company) => company.status === "Owned").length;
-    const buy = companies.filter((company) => company.status === "Buy Candidate").length;
+    const reports = companies.reduce((sum, company) => sum + (company.codexReports?.length || 0), 0);
+    const dataReady = companies.filter(
+      (company) => Boolean(findFundamentals(company.ticker, company.name)) || Boolean(findTrendlyneIntelligence(company.ticker, company.name))
+    ).length;
+    const watchlist = companies.filter((company) => company.watchlisted).length;
 
     return (
       <>
-        <PageHead eyebrow="Research command centre" title="Investment Dashboard">
-          Track opportunities, financial quality, conviction, portfolio exposure and thesis progress.
+        <PageHead eyebrow="Research cockpit" title="IMRS Data-to-Report Hub">
+          Import market and filing evidence, export a Codex research packet, then store the final institutional report.
         </PageHead>
         <div className="stats">
           <Stat label="Companies tracked" value={companies.length} />
-          <Stat label="Owned positions" value={owned} />
-          <Stat label="Buy candidates" value={buy} />
-          <Stat label="Average score" value={`${average}/100`} />
+          <Stat label="Data-ready records" value={dataReady} />
+          <Stat label="Final reports" value={reports} />
+          <Stat label="Watchlist" value={watchlist} />
         </div>
+        <section className="panel workflow-panel">
+          <span className="eyebrow">Core workflow</span>
+          <div className="workflow-grid">
+            <article>
+              <strong>1. Find company</strong>
+              <p>Search by ticker or company name and create the record.</p>
+            </article>
+            <article>
+              <strong>2. Sync data</strong>
+              <p>Use the Data Hub to collect market, financial, ownership and event evidence.</p>
+            </article>
+            <article>
+              <strong>3. Export packet</strong>
+              <p>Send the structured evidence packet to Codex for dynamic analysis.</p>
+            </article>
+            <article>
+              <strong>4. Import report</strong>
+              <p>Store the finished stock-only report and export the PDF from IMRS.</p>
+            </article>
+          </div>
+        </section>
         <div className="portfolio-grid">
           <section className="panel">
             <div className="section-head">
               <div>
-                <span className="eyebrow">Ranked universe</span>
-                <h2>Research pipeline</h2>
+                <span className="eyebrow">Company records</span>
+                <h2>Research queue</h2>
               </div>
               <button onClick={createCompany} title="Create company">
                 <Plus size={17} /> Company
@@ -3477,22 +3488,16 @@ export default function Home() {
             <CompanyTable companies={ranked} openCompany={openCompany} />
           </section>
           <aside className="panel">
-            <span className="eyebrow">Quick intelligence</span>
-            <h3>Research health</h3>
+            <span className="eyebrow">Current focus</span>
+            <h3>Simplified operating model</h3>
             <div className="kpi-list">
-              <Kpi label="High conviction >=75" value={companies.filter((company) => score(company) >= 75).length} />
-              <Kpi label="ROCE >=20%" value={companies.filter((company) => asNumber(company.financials.roce) >= 20).length} />
-              <Kpi
-                label="Sales growth >=20%"
-                value={companies.filter((company) => asNumber(company.financials.salesGrowth) >= 20).length}
-              />
-              <Kpi
-                label="Low debt <=0.5"
-                value={companies.filter((company) => asNumber(company.financials.debtEquity) <= 0.5).length}
-              />
+              <Kpi label="Evidence collector" value="Website" />
+              <Kpi label="Research engine" value="Codex" />
+              <Kpi label="Reader output" value="Report" />
+              <Kpi label="Report body" value="Stock only" />
             </div>
             <div className="note">
-              Live market data will be added through a backend API. The starter directory is only a first lookup layer.
+              Redundant scoring, committee and portfolio surfaces are hidden so IMRS stays focused on collecting evidence and publishing the final report.
             </div>
           </aside>
         </div>
@@ -3502,7 +3507,7 @@ export default function Home() {
 
   function openCompany(id: string) {
     setSelectedId(id);
-    setActiveTab("overview");
+    setActiveTab("report");
     setActivePage("research");
   }
 
@@ -3793,21 +3798,21 @@ export default function Home() {
 
     return (
       <>
-        <PageHead eyebrow="Source-backed data" title="Fundamentals Import">
-          Combine Kite prices, NSE filings, Screener workbooks and Trendlyne exports into one company record.
+        <PageHead eyebrow="Evidence collection" title="Data Hub">
+          Collect the raw market, financial, ownership and filing evidence needed for the final stock report.
         </PageHead>
         <section className="panel">
           <div className="section-head">
             <div>
-              <span className="eyebrow">Live data connector</span>
-              <h2>Trendlyne MCP</h2>
+              <span className="eyebrow">Research data connector</span>
+              <h2>Market intelligence sync</h2>
             </div>
             <div className="top-actions">
               <button className="secondary" onClick={refreshTrendlyneStatus} disabled={trendlyneLoading}>
-                <Download size={17} /> {trendlyneLoading ? "Checking" : "Check MCP"}
+                <Download size={17} /> {trendlyneLoading ? "Checking" : "Check connection"}
               </button>
               <button onClick={() => syncTrendlyneCompany()} disabled={!selected?.ticker || Boolean(syncingSymbol)}>
-                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync + Build Thesis"}
+                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync selected company"}
               </button>
             </div>
           </div>
@@ -3822,8 +3827,8 @@ export default function Home() {
           </div>
           <div className={trendlyneStatus?.connected ? "info" : "note"}>
             {trendlyneStatus?.connected
-              ? `Trendlyne MCP is reachable through ${trendlyneStatus.transport}. IMRS can now fill fundamentals and build a first-pass research thesis.`
-              : trendlyneStatus?.error || trendlyneStatus?.message || "Add TRENDLYNE_MCP_URL in Vercel to enable this connector."}
+              ? "The data connector is reachable. IMRS can now collect company evidence for the report packet."
+              : trendlyneStatus?.error || trendlyneStatus?.message || "Add the data connector URL in Vercel to enable this sync."}
           </div>
           {trendlyneStatus?.tools?.length ? (
             <div className="tag-row">
@@ -3846,36 +3851,35 @@ export default function Home() {
             </button>
           </div>
           <div className="info">
-            IMRS syncs annual NSE financial-result filings for the selected company and fills revenue, profit, EPS, sales growth,
+            Sync annual financial-result filings for the selected company and fill revenue, profit, EPS, sales growth,
             profit growth and operating margin where available.
           </div>
-          <div className="note">ROE, ROCE, debt/equity and cash-flow metrics still need richer balance-sheet data from Trendlyne or another licensed source.</div>
+          <div className="note">Use this as evidence collection only. The final interpretation happens in the stock report.</div>
         </section>
         <section className="panel" style={{ marginTop: 14 }}>
           <div className="section-head">
             <div>
               <span className="eyebrow">Subscription data</span>
-              <h2>Trendlyne Export</h2>
+              <h2>Financial data export</h2>
             </div>
             <label className="file-button">
-              <Upload size={17} /> Upload Trendlyne
+              <Upload size={17} /> Upload export
               <input type="file" accept=".csv,.xlsx" onChange={importTrendlyne} />
             </label>
           </div>
           <div className="info">
-            Use Trendlyne Excel Connect/Data Downloader exports for richer fields such as ROE, ROCE, debt/equity, operating cash
+            Upload licensed data exports for richer fields such as ROE, ROCE, debt/equity, operating cash
             flow, FII/DII holding, institutional ownership, DVM scores and analyst score.
           </div>
           <div className="note">
-            This uses your official export file. A direct background sync can be added later if Trendlyne provides an official API or
-            live export URL for your subscription.
+            This is a fallback when direct sync does not provide enough detail.
           </div>
         </section>
         <section className="panel" style={{ marginTop: 14 }}>
           <div className="section-head">
             <div>
               <span className="eyebrow">Upload fallback</span>
-              <h2>Screener Excel</h2>
+              <h2>Workbook import</h2>
             </div>
             <label className="file-button">
               <Upload size={17} /> Upload Excel
@@ -3883,20 +3887,20 @@ export default function Home() {
             </label>
           </div>
           <div className="info">
-            This importer is built for Screener company Excel exports like your Reliance workbook. It extracts the Data Sheet and fills
+            This importer reads company Excel exports. It extracts the Data Sheet and fills
             market cap, revenue, profit, EPS, P/E, ROE, ROCE, debt/equity, growth, OPM and cash flow.
           </div>
-          <div className="note">Promoter holding is not present in this Screener workbook format, so it remains manual for now.</div>
+          <div className="note">Use workbook upload only when direct data sync is incomplete.</div>
         </section>
         <section className="panel" style={{ marginTop: 14 }}>
           <div className="section-head">
             <div>
               <span className="eyebrow">Exchange filing</span>
-              <h2>NSE Shareholding CSV</h2>
+              <h2>Shareholding pattern</h2>
             </div>
             <div className="top-actions">
               <button className="secondary" onClick={() => syncNseShareholding()} disabled={!selected?.ticker || Boolean(syncingSymbol)}>
-                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync NSE"}
+                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync latest"}
               </button>
               <label className="file-button">
                 <Upload size={17} /> Upload CSV
@@ -3905,7 +3909,7 @@ export default function Home() {
             </div>
           </div>
           <div className="info">
-            IMRS now syncs promoter holding directly from NSE when a company is imported from search. Use Sync NSE to refresh the
+            IMRS syncs promoter holding directly when a company is imported from search. Use Sync latest to refresh the
             selected company, or upload a CSV only as a fallback.
           </div>
           <div className="note">This fills the Promoter holding % field from the latest row in the NSE filing.</div>
@@ -4148,165 +4152,73 @@ export default function Home() {
 
     if (activeTab === "report") {
       const fundamentalsRecord = findFundamentals(company.ticker, company.name);
-      const diagnostics = investmentDiagnostics(company, fundamentalsRecord, trendlyneIntel);
-      const reportText = reportTextForCompany(company, fundamentalsRecord, trendlyneIntel);
-      const bullets = getReportBullets(company, fundamentalsRecord);
-      const sanity = sanityCheckItems(company, fundamentalsRecord, trendlyneIntel);
-      const needsVerification = needsVerificationItems(company, fundamentalsRecord, trendlyneIntel);
-      const weightedText = weightedExpectedPriceText(company, fundamentalsRecord);
+      const reportText = company.codexReports?.[0]?.content || scrubReportText(company.aiOutput);
+      const finalReportCount = company.codexReports?.length || 0;
       return (
         <div className="report-stack">
           <section className="panel report-hero">
             <div>
-              <span className="eyebrow">Investment committee report</span>
-              <h2>{diagnostics.finalVerdict}</h2>
-              <p>
-                This page combines Kite, NSE, Trendlyne and saved IMRS notes into one decision view. Treat it as research support, not
-                financial advice.
-              </p>
+              <span className="eyebrow">Final stock report</span>
+              <h2>{finalReportCount ? "Institutional report ready" : "Export evidence packet for Codex"}</h2>
+              <p>Use this page to move from collected evidence to a clean stock-only research report and PDF.</p>
             </div>
             <div className="toolbar">
-              <button onClick={buildResearchFromSavedData} disabled={!trendlyneIntel || Boolean(syncingSymbol)}>
-                <FileText size={17} /> Rebuild from Trendlyne
-              </button>
-              <button onClick={generateOpenAiReport} disabled={aiGenerating}>
-                <NotebookText size={17} /> {aiGenerating ? "Generating..." : "Generate AI Report"}
-              </button>
               <button className="secondary" onClick={exportCodexResearchPacket}>
-                <Download size={17} /> Export Packet for Codex
+                <Download size={17} /> Export Evidence Packet
               </button>
               <label className="secondary file-label">
-                <Upload size={17} /> Import Codex Report
+                <Upload size={17} /> Import Final Report
                 <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} />
               </label>
-              <button className="secondary" onClick={exportSelectedReportPdf}>
+              <button className="secondary" onClick={exportSelectedReportPdf} disabled={!reportText.trim()}>
                 <FileDown size={17} /> Export PDF
               </button>
             </div>
           </section>
 
-          <div className="grid-2">
-            <article className="panel">
-              <span className="eyebrow">Source coverage and reconciliation</span>
-              <ul className="report-list">
-                {sourceCoverageRows(company, fundamentalsRecord, trendlyneIntel).map(([source, status]) => (
-                  <li key={source}>
-                    <strong>{source}:</strong> {status}
-                  </li>
-                ))}
-              </ul>
-            </article>
-            <article className="panel">
-              <span className="eyebrow">Sanity check before verdict</span>
-              <ul className="report-list">
-                {sanity.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-            <article className="panel">
-              <span className="eyebrow">Needs verification</span>
-              <ul className="report-list danger-list">
-                {(needsVerification.length ? needsVerification : ["No major unit/date sanity warnings from the current data packet."]).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
+          <div className="stats compact-stats report-stats">
+            <Stat label="Evidence packet" value={fundamentalsRecord || trendlyneIntel ? "Ready" : "Needs sync"} />
+            <Stat label="Final reports" value={finalReportCount} />
+            <Stat label="PDF export" value={reportText.trim() ? "Ready" : "Import report"} />
+            <Stat label="Report style" value="Stock only" />
           </div>
 
-          <div className="stats report-stats">
-            <Stat label="Conviction score" value={`${score(company)}/100`} />
-            <Stat label="Multibagger probability" value={`${diagnostics.multibaggerProbability}/100`} />
-            <Stat label="Trap probability" value={`${diagnostics.trapProbability}/100`} />
-            <Stat label="Weighted scenario price" value={weightedText} />
-          </div>
-
-          <div className="grid-3">
+          <div className="grid-3 workflow-grid compact-flow">
             <article className="panel">
-              <span className="eyebrow">Business quality</span>
-              <h3>{company.scores.businessQuality}/10</h3>
-              <p>{savedResearchText(company.businessSummary, businessModelDraft(company, fundamentalsRecord))}</p>
+              <span className="eyebrow">Step 1</span>
+              <h3>Sync evidence</h3>
+              <p>Use Data Hub for company fundamentals, shareholding, market data and filing evidence.</p>
             </article>
             <article className="panel">
-              <span className="eyebrow">Financial quality</span>
-              <h3>{company.scores.financialStrength}/10</h3>
-              <p>
-                ROE {validatedMetric(company, fundamentalsRecord, "roe", "%")}; ROCE{" "}
-                {validatedMetric(company, fundamentalsRecord, "roce", "%")}; debt/equity{" "}
-                {validatedMetric(company, fundamentalsRecord, "debtEquity", "x")}; profit growth{" "}
-                {validatedMetric(company, fundamentalsRecord, "profitGrowth", "%")}.
-              </p>
+              <span className="eyebrow">Step 2</span>
+              <h3>Export packet</h3>
+              <p>The packet carries all raw evidence to Codex for dynamic, case-by-case research.</p>
             </article>
             <article className="panel">
-              <span className="eyebrow">Valuation</span>
-              <h3>{company.scores.valuation}/10</h3>
-              <p>
-                P/E {validatedMetric(company, fundamentalsRecord, "pe", "x")}; bear/base/bull{" "}
-                {valuationPriceText(company, company.valuation.bear, fundamentalsRecord)} /{" "}
-                {valuationPriceText(company, company.valuation.base, fundamentalsRecord)} /{" "}
-                {valuationPriceText(company, company.valuation.bull, fundamentalsRecord)}.
-              </p>
-            </article>
-          </div>
-
-          <div className="grid-2">
-            <article className="panel">
-              <span className="eyebrow">What must happen for 5x/10x</span>
-              <ul className="report-list">
-                {bullets.fiveTen.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-            <article className="panel">
-              <span className="eyebrow">What would make this fail</span>
-              <ul className="report-list danger-list">
-                {bullets.fail.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-          </div>
-
-          <div className="grid-2">
-            <article className="panel">
-              <span className="eyebrow">Ownership</span>
-              <h3>Promoter {company.financials.promoterHolding || "-"}%</h3>
-              <ul className="report-list">
-                {ownershipLines(company, fundamentalsRecord).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-            <article className="panel">
-              <span className="eyebrow">Growth runway</span>
-              <h3>{company.scores.growthRunway}/10</h3>
-              <p>
-                {savedResearchText(
-                  company.industryOpportunity || company.multibaggerCase,
-                  `Industry exposure: ${inferredSector(company, fundamentalsRecord)}. Verify growth runway from order book, margin trajectory, capacity additions and management commentary.`
-                )}
-              </p>
+              <span className="eyebrow">Step 3</span>
+              <h3>Import report</h3>
+              <p>The final report shown below should discuss only the stock, not the data pipeline.</p>
             </article>
           </div>
 
           <section className="panel">
             <div className="section-head">
               <div>
-                <span className="eyebrow">Final research memo</span>
-                <h2>Stock research report</h2>
+                <span className="eyebrow">Reader-facing output</span>
+                <h2>Final stock research report</h2>
               </div>
-              <button className="secondary" onClick={generateStructuredAnalysis}>
-                <FileText size={17} /> Refresh rule-based memo
-              </button>
             </div>
-            <textarea className="report-output" value={reportText} onChange={(event) => updateSelected({ aiOutput: event.target.value })} />
+            {reportText.trim() ? (
+              <textarea className="report-output" value={reportText} onChange={(event) => updateSelected({ aiOutput: event.target.value })} />
+            ) : (
+              <div className="info">No final report imported yet. Export the evidence packet, generate the report with Codex, then import it here.</div>
+            )}
           </section>
 
           <section className="panel">
             <div className="section-head">
               <div>
-                <span className="eyebrow">Codex research engine</span>
+                <span className="eyebrow">Imported reports</span>
                 <h2>Final report library</h2>
               </div>
               <div className="toolbar">
@@ -4339,7 +4251,7 @@ export default function Home() {
               </div>
             ) : (
               <div className="info">
-                Export the research packet, let Codex generate the institutional report, then import the final text here for storage and PDF export.
+                Export the evidence packet, generate the institutional report in Codex, then import the final stock-only text here for storage and PDF export.
               </div>
             )}
           </section>
@@ -4677,12 +4589,8 @@ export default function Home() {
   const navItems: Array<[PageId, string, React.ReactNode]> = [
     ["dashboard", "Dashboard", <BarChart3 size={16} key="dashboard" />],
     ["search", "Search", <Search size={16} key="search" />],
-    ["screener", "Screener", <Gauge size={16} key="screener" />],
-    ["watchlist", "Watchlist", <Database size={16} key="watchlist" />],
-    ["portfolio", "Portfolio", <BriefcaseBusiness size={16} key="portfolio" />],
-    ["fundamentals", "Fundamentals", <FileText size={16} key="fundamentals" />],
-    ["committee", "Committee", <Users size={16} key="committee" />],
-    ["research", "Research", <FlaskConical size={16} key="research" />],
+    ["fundamentals", "Data Hub", <FileText size={16} key="fundamentals" />],
+    ["research", "Report", <FlaskConical size={16} key="research" />],
     ["kite", "Kite", <KeyRound size={16} key="kite" />]
   ];
 
@@ -4694,7 +4602,7 @@ export default function Home() {
             <div className="brandmark">I</div>
             <div>
               <strong>IMRS Enterprise</strong>
-              <small>Investment Research OS</small>
+              <small>Data-to-Report OS</small>
             </div>
           </div>
         </div>
@@ -4709,7 +4617,7 @@ export default function Home() {
           <div className="brandmark">I</div>
           <div>
             <strong>IMRS Enterprise</strong>
-            <small>Investment Research OS</small>
+            <small>Data-to-Report OS</small>
           </div>
         </div>
         <div className="top-actions">

@@ -278,6 +278,37 @@ textarea {
   margin-top: 16px;
 }
 
+.workflow-panel {
+  margin-bottom: 14px;
+}
+
+.workflow-grid {
+  display: grid;
+  gap: 13px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.workflow-grid article {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 13px;
+}
+
+.workflow-grid strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.workflow-grid p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.compact-flow {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -756,6 +787,7 @@ td small {
   }
 
   .grid-3,
+  .workflow-grid,
   .portfolio-grid {
     grid-template-columns: 1fr;
   }
