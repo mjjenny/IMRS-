@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 type ReportRequest = {
   company?: unknown;
   trendlyne?: unknown;
+  fundamentals?: unknown;
   ruleBasedReport?: string;
 };
 
@@ -45,13 +46,17 @@ Rules:
 - If source data is thin or contradictory, say exactly what is missing.
 - Focus on future prospects, multibagger potential and potential trap risk.
 - Use plain analyst language, not raw JSON.
-- Include these sections: Executive verdict, Business quality, Financial quality, Valuation, Growth runway, Ownership, Risks, Catalysts, Multibagger probability, Trap probability, Final recommendation, What must happen for 5x/10x, What would make this fail.
+- Include these sections: Sanity check before verdict, Executive verdict, Business quality, Financial quality, Valuation, Growth runway, Ownership, Risks, Catalysts, Multibagger probability, Trap probability, Needs verification, Final recommendation, What must happen for 5x/10x, What would make this fail.
+- Before generating the Executive Verdict, cross-reference core metrics for logical consistency. If an established blue-chip or large company shows a negative operating margin, unusually weak ROE/ROCE or a massive profit drop, explicitly ask whether there are exceptional/one-off items, base effects or data extraction errors. Apply a confidence penalty until this is resolved.
+- Never output floating financial figures. Every revenue, EPS, growth, margin, cash-flow or ownership metric must be tied to a visible timeframe such as Q1 FY27, FY26 Annual, TTM, or Undated/Unverified. If the data lacks a date, write "Undated/Unverified" next to the number.
+- When analyzing YoY profit or revenue declines, scan the supplied news, filings, corporate events and document-search text for exceptional items, base effects, one-off charges, impairments, accounting changes or transcript context before calling the company a value trap.
+- Enforce units. Use INR crore, INR, %, x, or ratio labels. If a raw metric lacks unit context, especially cash-flow values like CFO = 7.5, suppress it from primary conclusions and place it under Needs verification.
 
 Rule-based report:
 ${body.ruleBasedReport || "Not supplied."}
 
 Company and source packet:
-${compactJson({ company: body.company, trendlyne: body.trendlyne })}`;
+${compactJson({ company: body.company, fundamentals: body.fundamentals, trendlyne: body.trendlyne })}`;
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",

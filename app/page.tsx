@@ -583,19 +583,24 @@ function highRiskCount(company: Company) {
 function investmentDiagnostics(company: Company) {
   const f = company.financials;
   const conviction = score(company);
+  const marketCap = asNumber(company.marketCap);
   const roe = asNumber(f.roe);
   const roce = asNumber(f.roce);
   const pe = asNumber(f.pe);
+  const opm = asNumber(f.opm);
   const profitGrowth = asNumber(f.profitGrowth);
   const salesGrowth = asNumber(f.salesGrowth);
   const debt = asNumber(f.debtEquity);
   const dvmMomentum = asNumber(f.dvmMomentum);
   const dvmValuation = asNumber(f.dvmValuation);
+  const largeEstablished = marketCap >= 50000 || asNumber(f.dvmDurability) >= 55;
   const weakReturns = (roe > 0 && roe < 12) || (roce > 0 && roce < 12);
   const negativeProfit = profitGrowth < 0;
+  const dataContradiction = largeEstablished && (opm < 0 || profitGrowth <= -25);
   const expensive = pe > 45 || (dvmValuation > 0 && dvmValuation < 45);
   const weakMomentum = dvmMomentum > 0 && dvmMomentum < 45;
   const severeRisks = highRiskCount(company);
+  const sanityPenalty = dataContradiction ? 12 : 0;
 
   const multibaggerProbability = clampPercent(
     conviction * 0.48 +
@@ -607,7 +612,8 @@ function investmentDiagnostics(company: Company) {
       (debt > 0 && debt <= 0.5 ? 4 : debt > 1 ? -8 : 0) -
       (expensive ? 7 : 0) -
       (weakReturns ? 10 : 0) -
-      severeRisks * 4
+      severeRisks * 4 -
+      sanityPenalty
   );
 
   const trapProbability = clampPercent(
@@ -619,11 +625,14 @@ function investmentDiagnostics(company: Company) {
       (weakMomentum ? 8 : 0) +
       severeRisks * 7 -
       (salesGrowth >= 20 && profitGrowth >= 15 ? 8 : 0) -
-      (debt > 0 && debt <= 0.5 ? 5 : 0)
+      (debt > 0 && debt <= 0.5 ? 5 : 0) +
+      sanityPenalty
   );
 
   const finalVerdict =
-    trapProbability >= 60
+    dataContradiction
+      ? "Data-quality warning. Verify exceptional items, base effects and extraction accuracy before assigning a trap or multibagger label."
+      : trapProbability >= 60
       ? "Potential trap. Do not upgrade unless fundamentals and price discipline improve."
       : multibaggerProbability >= 70 && trapProbability < 40
         ? "High-potential candidate. Move to full diligence and valuation work."
@@ -637,6 +646,7 @@ function investmentDiagnostics(company: Company) {
     finalVerdict,
     weakReturns,
     negativeProfit,
+    dataContradiction,
     expensive,
     weakMomentum,
     severeRisks
@@ -685,15 +695,83 @@ function getReportBullets(company: Company) {
   return { fiveTen, fail };
 }
 
-function buildInvestmentReportText(company: Company) {
+function metricPeriod(record?: FundamentalsRecord) {
+  return record?.reportDate ? record.reportDate : "Undated/Unverified";
+}
+
+function timedMetric(value: string, unit = "", record?: FundamentalsRecord) {
+  if (!value) return "-";
+  return `${value}${unit ? ` ${unit}` : ""} (${metricPeriod(record)})`;
+}
+
+function hasExceptionalContext(intelligence?: TrendlyneIntelligenceRecord) {
+  const text = [intelligence?.news, intelligence?.events, intelligence?.documents].filter(Boolean).join("\n");
+  return /exceptional|one[- ]off|base effect|impairment|write[- ]off|extraordinary|transcript|concall|earnings call/i.test(text);
+}
+
+function isAmbiguousCfo(company: Company) {
+  const cfo = asNumber(company.financials.cfo);
+  const marketCap = asNumber(company.marketCap);
+  return Boolean(company.financials.cfo && marketCap >= 10000 && Math.abs(cfo) > 0 && Math.abs(cfo) < 100);
+}
+
+function needsVerificationItems(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
+  const f = company.financials;
+  const diagnostics = investmentDiagnostics(company);
+  const items: string[] = [];
+
+  if (!record?.reportDate) {
+    items.push("Core financial metrics lack a specific period and are marked Undated/Unverified.");
+  }
+  if (isAmbiguousCfo(company)) {
+    items.push(`Operating cash flow value "${f.cfo}" has no reliable unit context, so it is excluded from primary conclusions.`);
+  }
+  if (diagnostics.dataContradiction) {
+    items.push("Sanity check triggered: established/large company has a negative margin or major profit-growth decline. Check extraction accuracy.");
+  }
+  if (asNumber(f.profitGrowth) <= -20 && !hasExceptionalContext(intelligence)) {
+    items.push("Profit decline requires review for exceptional items, base effects, one-off charges and transcript commentary before using a trap label.");
+  }
+  if (asNumber(f.opm) < 0) {
+    items.push("Negative operating margin needs confirmation from original financial statements before relying on it.");
+  }
+
+  return items;
+}
+
+function sanityCheckItems(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
+  const diagnostics = investmentDiagnostics(company);
+  const items = needsVerificationItems(company, record, intelligence);
+  const passed: string[] = [];
+
+  if (!diagnostics.dataContradiction) {
+    passed.push("No major blue-chip sanity contradiction detected from the current metric set.");
+  }
+  if (record?.reportDate) {
+    passed.push(`Primary metric period is ${record.reportDate}.`);
+  }
+  if (hasExceptionalContext(intelligence)) {
+    passed.push("Recent source text contains possible exceptional-item, base-effect or transcript context.");
+  }
+
+  return items.length ? items : passed;
+}
+
+function buildInvestmentReportText(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
   const f = company.financials;
   const diagnostics = investmentDiagnostics(company);
   const bullets = getReportBullets(company);
   const weighted = weightedExpectedPrice(company);
   const risks = company.risks.slice(0, 5).map((risk) => `- ${risk.title}: ${risk.probability}/${risk.impact}. ${risk.mitigation}`).join("\n");
   const catalysts = company.catalysts.slice(0, 5).map((catalyst) => `- ${catalyst.title}: ${catalyst.status}. ${catalyst.notes}`).join("\n");
+  const sanity = sanityCheckItems(company, record, intelligence);
+  const needsVerification = needsVerificationItems(company, record, intelligence);
+  const cfoDisplay = isAmbiguousCfo(company) ? "Suppressed - unit needs verification" : timedMetric(f.cfo, "INR crore", record);
 
   return `IMRS Stock Research Report - ${company.name}
+
+Sanity check before verdict:
+${sanity.map((item) => `- ${item}`).join("\n")}
 
 Executive verdict:
 ${diagnostics.finalVerdict}
@@ -706,9 +784,15 @@ Business quality:
 ${company.businessSummary || "Not enough business-quality evidence has been entered yet."}
 
 Financial quality:
-Revenue INR ${f.revenue || "-"} crore; net profit INR ${f.profit || "-"} crore; EPS INR ${f.eps || "-"}; P/E ${f.pe || "-"}; ROE ${
-    f.roe || "-"
-  }%; ROCE ${f.roce || "-"}%; debt/equity ${f.debtEquity || "-"}; OPM ${f.opm || "-"}%; CFO ${f.cfo || "-"}.
+Revenue ${timedMetric(f.revenue, "INR crore", record)}; net profit ${timedMetric(f.profit, "INR crore", record)}; EPS ${timedMetric(
+    f.eps,
+    "INR",
+    record
+  )}; P/E ${timedMetric(f.pe, "x", record)}; ROE ${timedMetric(f.roe, "%", record)}; ROCE ${timedMetric(
+    f.roce,
+    "%",
+    record
+  )}; debt/equity ${timedMetric(f.debtEquity, "x", record)}; OPM ${timedMetric(f.opm, "%", record)}; CFO ${cfoDisplay}.
 
 Valuation:
 Bear/base/bull implied prices are INR ${Math.round(impliedPrice(company.valuation.bear)).toLocaleString("en-IN")}, INR ${Math.round(
@@ -730,6 +814,9 @@ ${risks || company.bearThesis || "No risk register has been built yet."}
 
 Catalysts:
 ${catalysts || "No catalysts have been recorded yet."}
+
+Needs verification:
+${needsVerification.length ? needsVerification.map((item) => `- ${item}`).join("\n") : "- No major unit/date sanity warnings from the current data packet."}
 
 What must happen for 5x/10x:
 ${bullets.fiveTen.map((item) => `- ${item}`).join("\n")}
@@ -774,12 +861,15 @@ function printableSection(title: string, body: string) {
   return `<section><h2>${escapeHtml(title)}</h2>${body}</section>`;
 }
 
-function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIntelligenceRecord) {
+function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIntelligenceRecord, record?: FundamentalsRecord) {
   const f = company.financials;
   const diagnostics = investmentDiagnostics(company);
   const bullets = getReportBullets(company);
   const generatedAt = new Date().toLocaleString("en-IN");
-  const reportText = company.aiOutput || buildInvestmentReportText(company);
+  const reportText = company.aiOutput || buildInvestmentReportText(company, record, trendlyneIntel);
+  const sanity = sanityCheckItems(company, record, trendlyneIntel);
+  const needsVerification = needsVerificationItems(company, record, trendlyneIntel);
+  const cfoDisplay = isAmbiguousCfo(company) ? "Suppressed - unit needs verification" : timedMetric(f.cfo, "INR crore", record);
   const valuationRows: Array<[string, string]> = (["bear", "base", "bull"] as const).map((caseName) => {
     const scenario = company.valuation[caseName];
     return [
@@ -859,21 +949,22 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
   </div>
 
   ${printableSection("Executive verdict", `<p>${escapeHtml(diagnostics.finalVerdict)}</p>`)}
+  ${printableSection("Sanity check before verdict", printableList(sanity))}
   ${printableSection("AI / analyst report", `<div class="memo">${nl2br(reportText)}</div>`)}
   ${printableSection(
     "Financials",
     printableTable([
-      ["Revenue INR crore", f.revenue],
-      ["Net profit INR crore", f.profit],
-      ["EPS INR", f.eps],
-      ["P/E", f.pe],
-      ["ROE %", f.roe],
-      ["ROCE %", f.roce],
-      ["Debt/Equity", f.debtEquity],
-      ["Sales growth %", f.salesGrowth],
-      ["Profit growth %", f.profitGrowth],
-      ["Operating margin %", f.opm],
-      ["Operating cash flow INR crore", f.cfo],
+      ["Revenue", timedMetric(f.revenue, "INR crore", record)],
+      ["Net profit", timedMetric(f.profit, "INR crore", record)],
+      ["EPS", timedMetric(f.eps, "INR", record)],
+      ["P/E", timedMetric(f.pe, "x", record)],
+      ["ROE", timedMetric(f.roe, "%", record)],
+      ["ROCE", timedMetric(f.roce, "%", record)],
+      ["Debt/Equity", timedMetric(f.debtEquity, "x", record)],
+      ["Sales growth", timedMetric(f.salesGrowth, "%", record)],
+      ["Profit growth", timedMetric(f.profitGrowth, "%", record)],
+      ["Operating margin", timedMetric(f.opm, "%", record)],
+      ["Operating cash flow", cfoDisplay],
       ["Current price INR", f.currentPrice],
       ["DVM durability", f.dvmDurability],
       ["DVM valuation", f.dvmValuation],
@@ -899,6 +990,7 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
   ${printableSection("Bear thesis", `<p>${nl2br(company.bearThesis || "Not entered.")}</p>`)}
   ${printableSection("Key assumptions", `<p>${nl2br(company.keyAssumptions || "Not entered.")}</p>`)}
   ${printableSection("Thesis killers", `<p>${nl2br(company.thesisKillers || "Not entered.")}</p>`)}
+  ${printableSection("Needs verification", printableList(needsVerification))}
   ${printableSection("What must happen for 5x/10x", printableList(bullets.fiveTen))}
   ${printableSection("What would make this fail", printableList(bullets.fail))}
   ${printableSection(
@@ -1130,7 +1222,14 @@ function buildThesisKillers(record: FundamentalsRecord, intelligence: TrendlyneI
 }
 
 function buildAnalystPrompt(company: Company) {
-  return `Act as an institutional equity research analyst. Using the source-backed data already saved in IMRS for ${company.name}, produce a balanced investment memo covering business quality, industry runway, management, financial strength, valuation, catalysts, risks, multibagger potential and potential trap warnings. Separate facts from assumptions and do not give a buy/sell recommendation unless the evidence is sufficient.`;
+  return `Act as an institutional equity research analyst. Using the source-backed data already saved in IMRS for ${company.name}, produce a balanced investment memo covering business quality, industry runway, management, financial strength, valuation, catalysts, risks, multibagger potential and potential trap warnings.
+
+Strict rules:
+- Run a sanity check before the executive verdict. If an established company shows negative operating margin, a massive profit drop, unusually weak ROE/ROCE or contradictory metrics, ask whether exceptional items, base effects or data extraction errors explain it.
+- Never output floating financial figures. Tie every revenue, EPS, growth, margin, cash-flow and ownership metric to Q/FY/TTM, or label it Undated/Unverified next to the number.
+- Before calling a stock a value trap, scan recent news, filings, corporate events and transcripts for exceptional items, base effects and one-off charges.
+- Enforce units. If a metric lacks unit context, suppress it from the primary financial table and move it to Needs Verification.
+- Separate facts from assumptions and do not give a buy/sell recommendation unless the evidence is sufficient.`;
 }
 
 function buildValuationCases(company: Company, record: FundamentalsRecord) {
@@ -2657,7 +2756,9 @@ export default function Home() {
 
   function generateStructuredAnalysis() {
     if (!selected) return;
-    updateSelected({ aiOutput: buildInvestmentReportText(selected) });
+    const record = findFundamentals(selected.ticker, selected.name);
+    const intelligence = findTrendlyneIntelligence(selected.ticker, selected.name);
+    updateSelected({ aiOutput: buildInvestmentReportText(selected, record, intelligence) });
     setActiveTab("report");
   }
 
@@ -2667,13 +2768,15 @@ export default function Home() {
     setAiGenerating(true);
     try {
       const trendlyneIntel = findTrendlyneIntelligence(selected.ticker, selected.name);
+      const record = findFundamentals(selected.ticker, selected.name);
       const response = await fetch("/api/ai/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           company: selected,
           trendlyne: trendlyneIntel,
-          ruleBasedReport: buildInvestmentReportText(selected)
+          fundamentals: record,
+          ruleBasedReport: buildInvestmentReportText(selected, record, trendlyneIntel)
         })
       });
       const payload = (await response.json()) as { report?: string; error?: string };
@@ -2693,6 +2796,7 @@ export default function Home() {
   function exportSelectedReportPdf() {
     if (!selected) return;
     const trendlyneIntel = findTrendlyneIntelligence(selected.ticker, selected.name);
+    const record = findFundamentals(selected.ticker, selected.name);
     const reportWindow = window.open("", "_blank");
     if (!reportWindow) {
       window.alert("Chrome blocked the report window. Allow pop-ups for IMRS, then try Export PDF again.");
@@ -2700,7 +2804,7 @@ export default function Home() {
     }
 
     reportWindow.document.open();
-    reportWindow.document.write(buildPrintableReportHtml(selected, trendlyneIntel));
+    reportWindow.document.write(buildPrintableReportHtml(selected, trendlyneIntel, record));
     reportWindow.document.close();
     reportWindow.focus();
     window.setTimeout(() => {
@@ -3410,9 +3514,12 @@ export default function Home() {
 
     if (activeTab === "report") {
       const diagnostics = investmentDiagnostics(company);
-      const reportText = company.aiOutput || buildInvestmentReportText(company);
+      const fundamentalsRecord = findFundamentals(company.ticker, company.name);
+      const reportText = company.aiOutput || buildInvestmentReportText(company, fundamentalsRecord, trendlyneIntel);
       const weighted = weightedExpectedPrice(company);
       const bullets = getReportBullets(company);
+      const sanity = sanityCheckItems(company, fundamentalsRecord, trendlyneIntel);
+      const needsVerification = needsVerificationItems(company, fundamentalsRecord, trendlyneIntel);
       return (
         <div className="report-stack">
           <section className="panel report-hero">
@@ -3436,6 +3543,25 @@ export default function Home() {
               </button>
             </div>
           </section>
+
+          <div className="grid-2">
+            <article className="panel">
+              <span className="eyebrow">Sanity check before verdict</span>
+              <ul className="report-list">
+                {sanity.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </article>
+            <article className="panel">
+              <span className="eyebrow">Needs verification</span>
+              <ul className="report-list danger-list">
+                {(needsVerification.length ? needsVerification : ["No major unit/date sanity warnings from the current data packet."]).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </article>
+          </div>
 
           <div className="stats report-stats">
             <Stat label="Conviction score" value={`${score(company)}/100`} />
