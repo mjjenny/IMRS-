@@ -153,6 +153,28 @@ The full intelligence route is:
 
 This calls Trendlyne's overview, technical, news, corporate events, shareholding, SAST/insider, bulk/block deal and document-search tools. The app stores the returned intelligence pack under the selected company's AI Analysis tab.
 
+## OpenAI Analyst Reports
+
+IMRS can generate a fuller analyst-style stock research report from the saved Kite, NSE and Trendlyne data. Add this environment variable in Vercel:
+
+```text
+OPENAI_API_KEY
+```
+
+Optional:
+
+```text
+OPENAI_MODEL
+```
+
+If `OPENAI_MODEL` is not set, IMRS uses `gpt-5-mini`. The OpenAI key is used only from the server route:
+
+```text
+/api/ai/report
+```
+
+The browser never receives the API key. The report page still works without OpenAI by using the rule-based IMRS report.
+
 ## Data Automation Roadmap
 
 Current automated sources:

@@ -633,6 +633,48 @@ td small {
   font-size: 38px;
 }
 
+.report-stack {
+  display: grid;
+  gap: 13px;
+}
+
+.report-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.report-hero h2 {
+  margin: 5px 0 8px;
+  max-width: 900px;
+}
+
+.report-hero p,
+.report-list {
+  color: var(--muted);
+}
+
+.report-stats {
+  margin-bottom: 0;
+}
+
+.report-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
+.danger-list {
+  color: #7a3030;
+}
+
+.report-output {
+  min-height: 520px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
 .implied {
   margin-top: 14px;
   padding-top: 12px;
@@ -719,7 +761,8 @@ td small {
   }
 
   .page-head,
-  .hero {
+  .hero,
+  .report-hero {
     align-items: flex-start;
     flex-direction: column;
   }

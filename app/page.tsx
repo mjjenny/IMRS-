@@ -9,6 +9,7 @@ import {
   FlaskConical,
   Gauge,
   KeyRound,
+  NotebookText,
   Plus,
   Search,
   Upload,
@@ -221,6 +222,7 @@ type TabId =
   | "overview"
   | "financials"
   | "scorecard"
+  | "report"
   | "thesis"
   | "risks"
   | "catalysts"
@@ -246,6 +248,7 @@ const tabs: Array<[TabId, string]> = [
   ["overview", "Overview"],
   ["financials", "Financials"],
   ["scorecard", "Scorecard"],
+  ["report", "Report"],
   ["thesis", "Thesis"],
   ["risks", "Risks"],
   ["catalysts", "Catalysts"],
@@ -522,7 +525,7 @@ function demoCompany(): Company {
 
 function normalizeCompany(raw: Partial<Company>): Company {
   const base = blankCompany();
-  return {
+  const normalized = {
     ...base,
     ...raw,
     id: raw.id || uid(),
@@ -538,6 +541,21 @@ function normalizeCompany(raw: Partial<Company>): Company {
     reviews: raw.reviews || [],
     documents: raw.documents || []
   };
+
+  return {
+    ...normalized,
+    businessSummary: stripRawTrendlyneText(normalized.businessSummary),
+    multibaggerCase: stripRawTrendlyneText(normalized.multibaggerCase),
+    industryOpportunity: stripRawTrendlyneText(normalized.industryOpportunity),
+    managementAssessment: stripRawTrendlyneText(normalized.managementAssessment),
+    bullThesis: stripRawTrendlyneText(normalized.bullThesis),
+    bearThesis: stripRawTrendlyneText(normalized.bearThesis),
+    keyAssumptions: stripRawTrendlyneText(normalized.keyAssumptions),
+    thesisKillers: stripRawTrendlyneText(normalized.thesisKillers),
+    aiOutput: stripRawTrendlyneText(normalized.aiOutput),
+    risks: normalized.risks.filter((item) => !looksLikeRawTrendlyneText(`${item.title} ${item.mitigation}`)),
+    catalysts: normalized.catalysts.filter((item) => !looksLikeRawTrendlyneText(`${item.title} ${item.notes}`))
+  };
 }
 
 function score(company: Company) {
@@ -551,6 +569,181 @@ function verdict(company: Company) {
   if (result >= 70) return "Promising candidate. Deepen research before position sizing.";
   if (result >= 60) return "Watchlist quality. Key weaknesses must improve.";
   return "Low-conviction. Avoid until evidence changes.";
+}
+
+function clampPercent(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function highRiskCount(company: Company) {
+  return company.risks.filter((risk) => risk.impact === "High" || risk.probability === "High").length;
+}
+
+function investmentDiagnostics(company: Company) {
+  const f = company.financials;
+  const conviction = score(company);
+  const roe = asNumber(f.roe);
+  const roce = asNumber(f.roce);
+  const pe = asNumber(f.pe);
+  const profitGrowth = asNumber(f.profitGrowth);
+  const salesGrowth = asNumber(f.salesGrowth);
+  const debt = asNumber(f.debtEquity);
+  const dvmMomentum = asNumber(f.dvmMomentum);
+  const dvmValuation = asNumber(f.dvmValuation);
+  const weakReturns = (roe > 0 && roe < 12) || (roce > 0 && roce < 12);
+  const negativeProfit = profitGrowth < 0;
+  const expensive = pe > 45 || (dvmValuation > 0 && dvmValuation < 45);
+  const weakMomentum = dvmMomentum > 0 && dvmMomentum < 45;
+  const severeRisks = highRiskCount(company);
+
+  const multibaggerProbability = clampPercent(
+    conviction * 0.48 +
+      company.scores.growthRunway * 3.2 +
+      company.scores.businessQuality * 2.2 +
+      company.scores.financialStrength * 1.6 +
+      (salesGrowth >= 20 ? 7 : salesGrowth >= 10 ? 3 : 0) +
+      (profitGrowth >= 20 ? 7 : negativeProfit ? -14 : 0) +
+      (debt > 0 && debt <= 0.5 ? 4 : debt > 1 ? -8 : 0) -
+      (expensive ? 7 : 0) -
+      (weakReturns ? 10 : 0) -
+      severeRisks * 4
+  );
+
+  const trapProbability = clampPercent(
+    100 -
+      conviction * 0.52 +
+      (negativeProfit ? 18 : 0) +
+      (weakReturns ? 16 : 0) +
+      (expensive ? 11 : 0) +
+      (weakMomentum ? 8 : 0) +
+      severeRisks * 7 -
+      (salesGrowth >= 20 && profitGrowth >= 15 ? 8 : 0) -
+      (debt > 0 && debt <= 0.5 ? 5 : 0)
+  );
+
+  const finalVerdict =
+    trapProbability >= 60
+      ? "Potential trap. Do not upgrade unless fundamentals and price discipline improve."
+      : multibaggerProbability >= 70 && trapProbability < 40
+        ? "High-potential candidate. Move to full diligence and valuation work."
+        : multibaggerProbability >= 55
+          ? "Promising but unproven. Keep on active watchlist and verify the thesis."
+          : "Research watchlist only. Evidence is not strong enough for multibagger status.";
+
+  return {
+    multibaggerProbability,
+    trapProbability,
+    finalVerdict,
+    weakReturns,
+    negativeProfit,
+    expensive,
+    weakMomentum,
+    severeRisks
+  };
+}
+
+function impliedPrice(scenario: ValuationCase) {
+  return asNumber(scenario.eps) * asNumber(scenario.pe);
+}
+
+function weightedExpectedPrice(company: Company) {
+  return (["bear", "base", "bull"] as const).reduce((sum, key) => {
+    const scenario = company.valuation[key];
+    return sum + impliedPrice(scenario) * (asNumber(scenario.probability) / 100);
+  }, 0);
+}
+
+function getReportBullets(company: Company) {
+  const f = company.financials;
+  const diagnostics = investmentDiagnostics(company);
+  const fiveTen =
+    diagnostics.multibaggerProbability >= 65
+      ? [
+          `Sales and earnings need to compound above ${metric(f.salesGrowth || "20", "%")} without cash-flow deterioration.`,
+          `ROCE/ROE should remain or move above 18-20%, with reinvestment opportunities still available.`,
+          "Valuation must stay disciplined enough that earnings growth, not only multiple expansion, drives returns."
+        ]
+      : [
+          "Growth must accelerate materially and prove it is structural rather than one-off.",
+          "ROE/ROCE and cash conversion need to improve before this can qualify as a serious 5x/10x candidate.",
+          "The company needs a clearer moat, stronger execution evidence and a valuation that leaves room for upside."
+        ];
+  const fail =
+    diagnostics.trapProbability >= 55
+      ? [
+          "Profit growth remains weak or negative while valuation stays elevated.",
+          "ROE/ROCE fail to recover, suggesting the business is not earning enough on capital.",
+          "Trendlyne/NSE evidence points to governance, insider, cash-flow or ownership deterioration."
+        ]
+      : [
+          "Two or more quarters miss the core growth or margin assumptions.",
+          "Operating cash flow fails to follow reported earnings.",
+          "A new governance, promoter, auditor, pledge or customer-concentration concern appears."
+        ];
+
+  return { fiveTen, fail };
+}
+
+function buildInvestmentReportText(company: Company) {
+  const f = company.financials;
+  const diagnostics = investmentDiagnostics(company);
+  const bullets = getReportBullets(company);
+  const weighted = weightedExpectedPrice(company);
+  const risks = company.risks.slice(0, 5).map((risk) => `- ${risk.title}: ${risk.probability}/${risk.impact}. ${risk.mitigation}`).join("\n");
+  const catalysts = company.catalysts.slice(0, 5).map((catalyst) => `- ${catalyst.title}: ${catalyst.status}. ${catalyst.notes}`).join("\n");
+
+  return `IMRS Stock Research Report - ${company.name}
+
+Executive verdict:
+${diagnostics.finalVerdict}
+
+Conviction score: ${score(company)}/100
+Multibagger probability: ${diagnostics.multibaggerProbability}/100
+Trap probability: ${diagnostics.trapProbability}/100
+
+Business quality:
+${company.businessSummary || "Not enough business-quality evidence has been entered yet."}
+
+Financial quality:
+Revenue INR ${f.revenue || "-"} crore; net profit INR ${f.profit || "-"} crore; EPS INR ${f.eps || "-"}; P/E ${f.pe || "-"}; ROE ${
+    f.roe || "-"
+  }%; ROCE ${f.roce || "-"}%; debt/equity ${f.debtEquity || "-"}; OPM ${f.opm || "-"}%; CFO ${f.cfo || "-"}.
+
+Valuation:
+Bear/base/bull implied prices are INR ${Math.round(impliedPrice(company.valuation.bear)).toLocaleString("en-IN")}, INR ${Math.round(
+    impliedPrice(company.valuation.base)
+  ).toLocaleString("en-IN")} and INR ${Math.round(impliedPrice(company.valuation.bull)).toLocaleString(
+    "en-IN"
+  )}. Probability-weighted expected price is INR ${Math.round(weighted).toLocaleString("en-IN")}. This is a scenario output, not a guaranteed target.
+
+Growth runway:
+${company.industryOpportunity || company.multibaggerCase || "Growth runway still needs evidence from filings, industry data and management commentary."}
+
+Ownership:
+Promoter ${f.promoterHolding || "-"}%; FII ${f.fiiHolding || "-"}%; DII ${f.diiHolding || "-"}%; institutional ${
+    f.institutionalHolding || "-"
+  }%.
+
+Key risks:
+${risks || company.bearThesis || "No risk register has been built yet."}
+
+Catalysts:
+${catalysts || "No catalysts have been recorded yet."}
+
+What must happen for 5x/10x:
+${bullets.fiveTen.map((item) => `- ${item}`).join("\n")}
+
+What would make this fail:
+${bullets.fail.map((item) => `- ${item}`).join("\n")}
+
+Final recommendation:
+${diagnostics.finalVerdict}
+
+Required next diligence:
+- Verify all figures against primary filings.
+- Review latest annual report, quarterly results and concall commentary.
+- Compare valuation, ROE/ROCE and growth against direct peers.
+- Treat this as research support, not financial advice.`;
 }
 
 function clampScore(value: number) {
@@ -597,6 +790,10 @@ function looksLikeRawTrendlyneText(value: string) {
   return /stockHeaders:|tableHeaders:|tableData:|stockData:|newsList:|summaryData:|chartData:|NSEcode\s*\|\s*BSEcode|currentPrice\s*\|\s*dayChangeP|unique_name\s*\|\s*type\s*\|\s*name|isCurtail:\s*(True|False)/i.test(
     value
   );
+}
+
+function stripRawTrendlyneText(value: string) {
+  return looksLikeRawTrendlyneText(value) ? "" : value;
 }
 
 function shouldReplaceGeneratedItem(value: string) {
@@ -1665,6 +1862,7 @@ export default function Home() {
   const [trendlyneStatus, setTrendlyneStatus] = useState<TrendlyneStatus | null>(null);
   const [trendlyneLoading, setTrendlyneLoading] = useState(false);
   const [syncingSymbol, setSyncingSymbol] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
   const [screen, setScreen] = useState({ roce: "15", growth: "15", debt: "1", pe: "50" });
 
   useEffect(() => {
@@ -1990,7 +2188,7 @@ export default function Home() {
       }));
       setSelectedId(company.id);
       setActivePage("research");
-      setActiveTab(intelligence ? "ai" : "financials");
+      setActiveTab(intelligence ? "report" : "financials");
       window.alert(`Synced Trendlyne MCP data for ${record.companyName}${intelligence ? " with full intelligence pack" : ""}.`);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not sync Trendlyne MCP data.");
@@ -2273,46 +2471,43 @@ export default function Home() {
     }
     const withFundamentals = applyFundamentals(selected, record);
     saveCompany(enrichWithTrendlyne(withFundamentals, record, intelligence));
-    window.alert("Research thesis rebuilt from saved Trendlyne data.");
+    setActiveTab("report");
+    window.alert("Research report rebuilt from saved Trendlyne data.");
   }
 
   function generateStructuredAnalysis() {
     if (!selected) return;
-    const f = selected.financials;
-    const text = `IMRS Structured Draft - ${selected.name}
+    updateSelected({ aiOutput: buildInvestmentReportText(selected) });
+    setActiveTab("report");
+  }
 
-Business:
-${selected.businessSummary || "Business summary not yet entered."}
+  async function generateOpenAiReport() {
+    if (!selected) return;
 
-Growth case:
-${selected.multibaggerCase || "Multibagger case not yet entered."}
-
-Financial snapshot:
-Revenue INR ${f.revenue || "-"} crore; Profit INR ${f.profit || "-"} crore; ROCE ${f.roce || "-"}%; ROE ${
-      f.roe || "-"
-    }%; Sales growth ${f.salesGrowth || "-"}%; Profit growth ${f.profitGrowth || "-"}%; Debt/Equity ${
-      f.debtEquity || "-"
-    }; P/E ${f.pe || "-"}; Promoter ${f.promoterHolding || "-"}%; FII ${f.fiiHolding || "-"}%; DII ${
-      f.diiHolding || "-"
-    }%; DVM ${f.dvmDurability || "-"}/${f.dvmValuation || "-"}/${f.dvmMomentum || "-"}; Analyst score ${
-      f.analystScore || "-"
-    }.
-
-Management:
-${selected.managementAssessment || "Management assessment not yet entered."}
-
-Bull thesis:
-${selected.bullThesis || "Not entered."}
-
-Bear thesis:
-${selected.bearThesis || "Not entered."}
-
-Committee verdict:
-${verdict(selected)}
-
-Required next step:
-Verify all figures, review primary documents, test thesis killers and complete valuation before making an investment decision.`;
-    updateSelected({ aiOutput: text });
+    setAiGenerating(true);
+    try {
+      const trendlyneIntel = findTrendlyneIntelligence(selected.ticker, selected.name);
+      const response = await fetch("/api/ai/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company: selected,
+          trendlyne: trendlyneIntel,
+          ruleBasedReport: buildInvestmentReportText(selected)
+        })
+      });
+      const payload = (await response.json()) as { report?: string; error?: string };
+      if (!response.ok || !payload.report) {
+        throw new Error(payload.error || "OpenAI report generation failed.");
+      }
+      updateSelected({ aiOutput: payload.report });
+      setActiveTab("report");
+      window.alert("OpenAI analyst report generated.");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "OpenAI report generation failed.");
+    } finally {
+      setAiGenerating(false);
+    }
   }
 
   function renderDashboard() {
@@ -3015,6 +3210,116 @@ Verify all figures, review primary documents, test thesis killers and complete v
       );
     }
 
+    if (activeTab === "report") {
+      const diagnostics = investmentDiagnostics(company);
+      const reportText = company.aiOutput || buildInvestmentReportText(company);
+      const weighted = weightedExpectedPrice(company);
+      const bullets = getReportBullets(company);
+      return (
+        <div className="report-stack">
+          <section className="panel report-hero">
+            <div>
+              <span className="eyebrow">Investment committee report</span>
+              <h2>{diagnostics.finalVerdict}</h2>
+              <p>
+                This page combines Kite, NSE, Trendlyne and saved IMRS notes into one decision view. Treat it as research support, not
+                financial advice.
+              </p>
+            </div>
+            <div className="toolbar">
+              <button onClick={buildResearchFromSavedData} disabled={!trendlyneIntel || Boolean(syncingSymbol)}>
+                <FileText size={17} /> Rebuild from Trendlyne
+              </button>
+              <button onClick={generateOpenAiReport} disabled={aiGenerating}>
+                <NotebookText size={17} /> {aiGenerating ? "Generating..." : "Generate AI Report"}
+              </button>
+            </div>
+          </section>
+
+          <div className="stats report-stats">
+            <Stat label="Conviction score" value={`${score(company)}/100`} />
+            <Stat label="Multibagger probability" value={`${diagnostics.multibaggerProbability}/100`} />
+            <Stat label="Trap probability" value={`${diagnostics.trapProbability}/100`} />
+            <Stat label="Weighted scenario price" value={`INR ${Math.round(weighted).toLocaleString("en-IN")}`} />
+          </div>
+
+          <div className="grid-3">
+            <article className="panel">
+              <span className="eyebrow">Business quality</span>
+              <h3>{company.scores.businessQuality}/10</h3>
+              <p>{company.businessSummary || "Business quality still needs source-backed notes."}</p>
+            </article>
+            <article className="panel">
+              <span className="eyebrow">Financial quality</span>
+              <h3>{company.scores.financialStrength}/10</h3>
+              <p>
+                ROE {company.financials.roe || "-"}%, ROCE {company.financials.roce || "-"}%, debt/equity{" "}
+                {company.financials.debtEquity || "-"}, profit growth {company.financials.profitGrowth || "-"}%.
+              </p>
+            </article>
+            <article className="panel">
+              <span className="eyebrow">Valuation</span>
+              <h3>{company.scores.valuation}/10</h3>
+              <p>
+                P/E {company.financials.pe || "-"}; bear/base/bull INR{" "}
+                {Math.round(impliedPrice(company.valuation.bear)).toLocaleString("en-IN")} /{" "}
+                {Math.round(impliedPrice(company.valuation.base)).toLocaleString("en-IN")} /{" "}
+                {Math.round(impliedPrice(company.valuation.bull)).toLocaleString("en-IN")}.
+              </p>
+            </article>
+          </div>
+
+          <div className="grid-2">
+            <article className="panel">
+              <span className="eyebrow">What must happen for 5x/10x</span>
+              <ul className="report-list">
+                {bullets.fiveTen.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </article>
+            <article className="panel">
+              <span className="eyebrow">What would make this fail</span>
+              <ul className="report-list danger-list">
+                {bullets.fail.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </article>
+          </div>
+
+          <div className="grid-2">
+            <article className="panel">
+              <span className="eyebrow">Ownership</span>
+              <h3>Promoter {company.financials.promoterHolding || "-"}%</h3>
+              <p>
+                FII {company.financials.fiiHolding || "-"}%, DII {company.financials.diiHolding || "-"}%, institutional{" "}
+                {company.financials.institutionalHolding || "-"}%.
+              </p>
+            </article>
+            <article className="panel">
+              <span className="eyebrow">Growth runway</span>
+              <h3>{company.scores.growthRunway}/10</h3>
+              <p>{company.industryOpportunity || company.multibaggerCase || "Growth runway still needs evidence."}</p>
+            </article>
+          </div>
+
+          <section className="panel">
+            <div className="section-head">
+              <div>
+                <span className="eyebrow">Final research memo</span>
+                <h2>Stock research report</h2>
+              </div>
+              <button className="secondary" onClick={generateStructuredAnalysis}>
+                <FileText size={17} /> Refresh rule-based memo
+              </button>
+            </div>
+            <textarea className="report-output" value={reportText} onChange={(event) => updateSelected({ aiOutput: event.target.value })} />
+          </section>
+        </div>
+      );
+    }
+
     if (activeTab === "thesis") {
       return (
         <div className="grid-2">
@@ -3216,11 +3521,16 @@ Verify all figures, review primary documents, test thesis killers and complete v
                 <button onClick={buildResearchFromSavedData} disabled={!trendlyneIntel}>
                   <FileText size={17} /> Build thesis from Trendlyne
                 </button>
+                <button onClick={generateOpenAiReport} disabled={aiGenerating}>
+                  <NotebookText size={17} /> {aiGenerating ? "Generating..." : "OpenAI report"}
+                </button>
                 <button className="secondary" onClick={generateStructuredAnalysis}>
                   <FileText size={17} /> Manual draft
                 </button>
               </div>
-              <div className="note">Trendlyne builds the evidence-backed first draft. Manual draft uses only whatever is already typed in the record.</div>
+              <div className="note">
+                Trendlyne builds the rule-based evidence pack. OpenAI writes a fuller analyst memo when OPENAI_API_KEY is configured in Vercel.
+              </div>
             </section>
             <section className="panel">
               <span className="eyebrow">Research output</span>
