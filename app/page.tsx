@@ -8,6 +8,7 @@ import {
   FileText,
   FlaskConical,
   Gauge,
+  KeyRound,
   Plus,
   Search,
   Upload,
@@ -99,6 +100,12 @@ type AppData = {
   portfolio: PortfolioPosition[];
 };
 
+type KiteStatus = {
+  apiKeyConfigured: boolean;
+  apiSecretConfigured: boolean;
+  connected: boolean;
+};
+
 type CompanySearchResult = {
   name: string;
   ticker: string;
@@ -117,7 +124,7 @@ type CompanySearchResult = {
   source?: string;
 };
 
-type PageId = "dashboard" | "search" | "screener" | "watchlist" | "portfolio" | "committee" | "research";
+type PageId = "dashboard" | "search" | "screener" | "watchlist" | "portfolio" | "committee" | "research" | "kite";
 type TabId =
   | "overview"
   | "financials"
@@ -455,6 +462,7 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<CompanySearchResult[]>(starterCompanies);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchMessage, setSearchMessage] = useState("Kite-ready search is available. Live LTP needs Kite credentials.");
+  const [kiteStatus, setKiteStatus] = useState<KiteStatus | null>(null);
   const [screen, setScreen] = useState({ roce: "15", growth: "15", debt: "1", pe: "50" });
 
   useEffect(() => {
@@ -482,6 +490,14 @@ export default function Home() {
   useEffect(() => {
     if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    fetch("/api/kite/status")
+      .then((response) => response.json())
+      .then((status: KiteStatus) => setKiteStatus(status))
+      .catch(() => setKiteStatus(null));
+  }, [hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -983,6 +999,37 @@ Verify all figures, review primary documents, test thesis killers and complete v
     );
   }
 
+  function renderKite() {
+    return (
+      <>
+        <PageHead eyebrow="Market data connection" title="Kite Connect">
+          Connect your Zerodha Kite session to enable live LTP in company search.
+        </PageHead>
+        <section className="panel">
+          <div className="grid-3">
+            <Kpi label="API key" value={kiteStatus?.apiKeyConfigured ? "Configured" : "Missing"} />
+            <Kpi label="API secret" value={kiteStatus?.apiSecretConfigured ? "Configured" : "Missing"} />
+            <Kpi label="Session" value={kiteStatus?.connected ? "Connected" : "Not connected"} />
+          </div>
+          <div className="toolbar" style={{ marginTop: 16 }}>
+            <a href="/api/kite/login" style={{ textDecoration: "none" }}>
+              <button type="button">
+                <KeyRound size={17} /> Connect Kite
+              </button>
+            </a>
+          </div>
+          <div className="info">
+            Add <strong>KITE_API_KEY</strong> and <strong>KITE_API_SECRET</strong> in Vercel first. Then click Connect Kite,
+            complete Zerodha login, and return to IMRS. The session is stored in this browser as a secure cookie.
+          </div>
+          <div className="note">
+            IMRS uses Kite for market-data lookup only. It does not place orders.
+          </div>
+        </section>
+      </>
+    );
+  }
+
   function renderResearch() {
     if (!selected) {
       return (
@@ -1412,7 +1459,8 @@ Verify all figures, review primary documents, test thesis killers and complete v
     ["watchlist", "Watchlist", <Database size={16} key="watchlist" />],
     ["portfolio", "Portfolio", <BriefcaseBusiness size={16} key="portfolio" />],
     ["committee", "Committee", <Users size={16} key="committee" />],
-    ["research", "Research", <FlaskConical size={16} key="research" />]
+    ["research", "Research", <FlaskConical size={16} key="research" />],
+    ["kite", "Kite", <KeyRound size={16} key="kite" />]
   ];
 
   if (!hydrated) {
@@ -1497,6 +1545,7 @@ Verify all figures, review primary documents, test thesis killers and complete v
           {activePage === "portfolio" ? renderPortfolio() : null}
           {activePage === "committee" ? renderCommittee() : null}
           {activePage === "research" ? renderResearch() : null}
+          {activePage === "kite" ? renderKite() : null}
         </section>
       </div>
     </main>

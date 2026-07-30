@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
@@ -242,12 +243,13 @@ function relevanceScore(instrument: KiteInstrument, needle: string) {
 
 async function attachKiteLtp(results: SearchResult[]) {
   const apiKey = process.env.KITE_API_KEY;
-  const accessToken = process.env.KITE_ACCESS_TOKEN;
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get("kite_access_token")?.value || process.env.KITE_ACCESS_TOKEN;
 
   if (!apiKey || !accessToken || results.length === 0) {
     return {
       results,
-      message: "Kite instrument search is active. Add KITE_API_KEY and today's KITE_ACCESS_TOKEN in Vercel to enable live LTP."
+      message: "Kite instrument search is active. Connect Kite in IMRS to enable live LTP."
     };
   }
 

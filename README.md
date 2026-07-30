@@ -39,10 +39,16 @@ Search uses Kite Connect's instrument master. To add live LTP, add these environ
 
 ```text
 KITE_API_KEY
-KITE_ACCESS_TOKEN
+KITE_API_SECRET
 ```
 
-Kite access tokens are session based, so `KITE_ACCESS_TOKEN` may need to be refreshed after login.
+In the Kite developer console, set the redirect URL to:
+
+```text
+https://imrs-omega.vercel.app/api/kite/callback
+```
+
+Then open IMRS, go to the Kite page, and click Connect Kite. Kite access tokens are session based, so reconnect after the token expires.
 
 The old single-file version is preserved at:
 
