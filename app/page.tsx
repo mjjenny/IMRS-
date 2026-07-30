@@ -572,6 +572,197 @@ function hasMeaningfulText(value: string) {
   return Boolean(clean) && !clean.includes("no data returned");
 }
 
+function shouldAutoFillText(value: string) {
+  const clean = value.trim().toLowerCase();
+  if (!clean) return true;
+  return [
+    "replace this sample",
+    "map industry size",
+    "assess promoter",
+    "build the strongest",
+    "list every assumption",
+    "define evidence requiring",
+    "not yet entered"
+  ].some((placeholder) => clean.includes(placeholder));
+}
+
+function setIfDraft(current: string, next: string) {
+  return shouldAutoFillText(current) && hasMeaningfulText(next) ? next : current;
+}
+
+function metric(value: string, suffix = "") {
+  return value ? `${value}${suffix}` : "-";
+}
+
+function ratioScore(value: string, good: number, okay: number, higherIsBetter = true) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || !value) return 5;
+  if (higherIsBetter) return numberValue >= good ? 8 : numberValue >= okay ? 6 : 4;
+  return numberValue <= good ? 8 : numberValue <= okay ? 6 : 4;
+}
+
+function growthLabel(value: string) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || !value) return "unverified";
+  if (numberValue >= 20) return "strong";
+  if (numberValue >= 10) return "moderate";
+  if (numberValue >= 0) return "slow";
+  return "negative";
+}
+
+function scoreWord(value: string) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || !value) return "not scored";
+  if (numberValue >= 70) return "strong";
+  if (numberValue >= 50) return "average";
+  return "weak";
+}
+
+function buildBusinessSummary(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  const overview = hasMeaningfulText(intelligence.overview)
+    ? compactText(intelligence.overview, 420)
+    : `${record.companyName || company.name} is classified under ${company.sector || "the imported Trendlyne/NSE universe"}.`;
+
+  return `${overview}
+
+Evidence snapshot: market cap INR ${metric(record.marketCap || company.marketCap, " cr")}; P/E ${metric(record.pe)}; ROE ${metric(
+    record.roe,
+    "%"
+  )}; ROCE ${metric(record.roce, "%")}; Debt/Equity ${metric(record.debtEquity)}; promoter holding ${metric(
+    record.promoterHolding,
+    "%"
+  )}.`;
+}
+
+function buildIndustryOpportunity(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  const sectorLine = company.sector ? `${company.sector} sector exposure needs to be tested for industry growth, regulation, cyclicality and competition.` : "";
+  const recentEvidence = compactText([intelligence.news, intelligence.events].filter(hasMeaningfulText).join("\n\n"), 420);
+  return `${sectorLine || "Industry context should be verified from sector sources and company filings."}
+
+Trendlyne signal: sales growth is ${growthLabel(record.salesGrowth)} at ${metric(record.salesGrowth, "%")}; DVM momentum is ${metric(
+    record.dvmMomentum
+  )} (${scoreWord(record.dvmMomentum)}).${recentEvidence ? `\n\nRecent evidence:\n${recentEvidence}` : ""}`;
+}
+
+function buildManagementAssessment(record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  const ownership = `Promoter holding ${metric(record.promoterHolding, "%")}; FII ${metric(record.fiiHolding, "%")}; DII ${metric(
+    record.diiHolding,
+    "%"
+  )}; institutional holding ${metric(record.institutionalHolding, "%")}.`;
+  const sast = hasMeaningfulText(intelligence.sast) ? compactText(intelligence.sast, 360) : "No meaningful SAST/insider text was returned in this sync.";
+  return `${ownership}
+
+Governance read-through: high promoter ownership can support alignment, but it is not proof of governance quality. Review pledges, related-party transactions, auditor notes, capital allocation and insider/SAST changes.
+
+Trendlyne ownership evidence:
+${sast}`;
+}
+
+function buildMultibaggerCase(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  const positives = [
+    Number(record.salesGrowth) >= 15 ? `sales growth is healthy at ${record.salesGrowth}%` : "",
+    Number(record.roce) >= 15 ? `ROCE is acceptable/strong at ${record.roce}%` : "",
+    Number(record.debtEquity) <= 0.5 && record.debtEquity ? `balance sheet leverage is controlled at ${record.debtEquity} debt/equity` : "",
+    Number(record.promoterHolding) >= 45 ? `promoter holding is meaningful at ${record.promoterHolding}%` : "",
+    Number(record.dvmDurability) >= 60 ? `Trendlyne durability score is supportive at ${record.dvmDurability}` : "",
+    hasMeaningfulText(intelligence.news) ? "recent news flow provides items to investigate as possible catalysts" : ""
+  ].filter(Boolean);
+
+  return `${record.companyName || company.name} can be treated as a possible multibagger candidate only if the business can compound earnings for several years without serious governance or balance-sheet deterioration.
+
+Current supporting evidence:
+${positives.length ? positives.map((item) => `- ${item}`).join("\n") : "- Trendlyne data does not yet show enough high-quality multibagger evidence."}
+
+What must be proven next: large growth runway, durable moat, improving ROCE/ROE, cash conversion, reinvestment opportunity, management execution and valuation discipline.`;
+}
+
+function buildBullThesis(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  return `Bull case: ${record.companyName || company.name} becomes attractive if revenue growth remains ${growthLabel(record.salesGrowth)}, profitability recovers or improves, capital efficiency rises, and the market gains confidence in the durability of earnings.
+
+Evidence to support the upside case:
+- Sales growth: ${metric(record.salesGrowth, "%")}.
+- Profit growth: ${metric(record.profitGrowth, "%")}.
+- ROE/ROCE: ${metric(record.roe, "%")} / ${metric(record.roce, "%")}.
+- DVM durability/valuation/momentum: ${metric(record.dvmDurability)} / ${metric(record.dvmValuation)} / ${metric(record.dvmMomentum)}.
+
+Catalyst watch:
+${compactText([intelligence.news, intelligence.events].filter(hasMeaningfulText).join("\n\n"), 380) || "Track quarterly results, management commentary, order wins, margin recovery and institutional ownership changes."}`;
+}
+
+function buildBearThesis(record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  const concerns = [
+    Number(record.profitGrowth) < 0 ? `profit growth is negative at ${record.profitGrowth}%` : "",
+    Number(record.roce) > 0 && Number(record.roce) < 12 ? `ROCE is modest at ${record.roce}%` : "",
+    Number(record.roe) > 0 && Number(record.roe) < 12 ? `ROE is modest at ${record.roe}%` : "",
+    Number(record.pe) > 35 ? `valuation may already price in optimism at ${record.pe}x earnings` : "",
+    Number(record.dvmMomentum) > 0 && Number(record.dvmMomentum) < 45 ? `Trendlyne momentum is weak at ${record.dvmMomentum}` : "",
+    /sell|disposal|pledge|sast|insider/i.test(intelligence.sast) ? "insider/SAST activity needs forensic review" : ""
+  ].filter(Boolean);
+
+  return `Bear case: the stock may become a value trap or momentum trap if growth slows, margins compress, ROCE/ROE remain weak, or valuation is high relative to actual earnings delivery.
+
+Current concerns:
+${concerns.length ? concerns.map((item) => `- ${item}`).join("\n") : "- No single fatal concern was detected from the available Trendlyne snapshot, but primary filings still need review."}
+
+Trap test: avoid treating a popular name as a multibagger unless cash flow, capital allocation, governance and valuation all support the story.`;
+}
+
+function buildKeyAssumptions(record: FundamentalsRecord) {
+  return `Key assumptions to verify:
+- Sales can compound at or above ${metric(record.salesGrowth, "%")} without excessive working-capital stress.
+- Profit growth improves from ${metric(record.profitGrowth, "%")} and is not driven only by one-off items.
+- ROE and ROCE improve from ${metric(record.roe, "%")} / ${metric(record.roce, "%")}.
+- Debt/equity remains controlled near ${metric(record.debtEquity)}.
+- Promoter and institutional ownership remain stable.
+- Current valuation of ${metric(record.pe)}x earnings leaves enough upside for execution risk.`;
+}
+
+function buildThesisKillers(record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  return `Thesis killers:
+- Two or more quarters of revenue slowdown without a clear temporary reason.
+- Profit growth remains negative while valuation stays elevated.
+- ROCE/ROE deteriorate further from ${metric(record.roce, "%")} / ${metric(record.roe, "%")}.
+- Operating cash flow fails to track reported profits.
+- Promoter pledge, large insider selling, adverse SAST activity, auditor concerns or governance red flags appear.
+- DVM durability/momentum weakens materially.
+- Primary filings contradict the Trendlyne/NSE data used in this draft.${hasMeaningfulText(intelligence.sast) ? `\n\nOwnership/SAST evidence to monitor:\n${compactText(intelligence.sast, 260)}` : ""}`;
+}
+
+function buildAnalystPrompt(company: Company) {
+  return `Act as an institutional equity research analyst. Using the source-backed data already saved in IMRS for ${company.name}, produce a balanced investment memo covering business quality, industry runway, management, financial strength, valuation, catalysts, risks, multibagger potential and potential trap warnings. Separate facts from assumptions and do not give a buy/sell recommendation unless the evidence is sufficient.`;
+}
+
+function buildValuationCases(company: Company, record: FundamentalsRecord) {
+  const currentPrice = asNumber(record.currentPrice) || asNumber(company.financials.currentPrice);
+  const currentPe = asNumber(record.pe) || asNumber(company.financials.pe);
+  const reportedEps = asNumber(record.eps) || asNumber(company.financials.eps);
+  const impliedEps = !reportedEps && currentPrice && currentPe ? currentPrice / currentPe : 0;
+  const currentEps = reportedEps || impliedEps;
+  const salesGrowth = asNumber(record.salesGrowth) || asNumber(company.financials.salesGrowth) || 10;
+  const profitGrowth = asNumber(record.profitGrowth) || asNumber(company.financials.profitGrowth) || salesGrowth;
+  const baseGrowth = Math.max(-5, Math.min(25, profitGrowth || salesGrowth));
+  const bearGrowth = Math.max(-10, Math.min(baseGrowth - 5, salesGrowth / 2));
+  const bullGrowth = Math.max(baseGrowth + 5, Math.min(35, Math.max(salesGrowth, profitGrowth) + 5));
+  const basePe = currentPe || 20;
+  const bearPe = Math.max(8, Math.round(basePe * 0.65));
+  const bullPe = Math.min(45, Math.round(basePe * 1.2));
+  const projectEps = (growth: number) => (currentEps ? formatNumber(currentEps * Math.pow(1 + growth / 100, 5)) : "");
+
+  return {
+    bear: { revenueGrowth: formatNumber(bearGrowth, 1), eps: projectEps(bearGrowth), pe: String(bearPe), probability: "30" },
+    base: { revenueGrowth: formatNumber(baseGrowth, 1), eps: projectEps(baseGrowth), pe: String(Math.round(basePe)), probability: "50" },
+    bull: { revenueGrowth: formatNumber(bullGrowth, 1), eps: projectEps(bullGrowth), pe: String(bullPe), probability: "20" }
+  };
+}
+
+function buildResearchReview(record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
+  return {
+    quarter: new Date(record.importedAt || intelligence.importedAt).toLocaleDateString("en-IN", { month: "short", year: "numeric" }),
+    verdict: "Unchanged",
+    notes: `Trendlyne/NSE sync created a first-pass research draft. Verify annual report, latest quarterly results, concall commentary, cash flow and governance before changing position size.`
+  };
+}
+
 function mergeDocuments(existing: Company["documents"], additions: Company["documents"]) {
   const names = new Set(existing.map((item) => normalizeKey(item.name)));
   return [
@@ -611,13 +802,31 @@ function mergeCatalysts(existing: Company["catalysts"], additions: Company["cata
   ];
 }
 
+function mergeReviews(existing: Company["reviews"], additions: Company["reviews"]) {
+  const names = new Set(existing.map((item) => normalizeKey(`${item.quarter}${item.notes}`)));
+  return [
+    ...existing,
+    ...additions.filter((item) => {
+      const key = normalizeKey(`${item.quarter}${item.notes}`);
+      if (names.has(key)) return false;
+      names.add(key);
+      return true;
+    })
+  ];
+}
+
 function trendlyneResearchBrief(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
-  return `Trendlyne MCP Research Brief - ${record.companyName || company.name}
+  return `IMRS Institutional Research Draft - ${record.companyName || company.name}
 
 Source:
 Trendlyne MCP, synced ${new Date(intelligence.importedAt).toLocaleString()} via ${intelligence.transport}.
 
-Financial and ownership snapshot:
+1. Executive view
+Current IMRS verdict: ${verdict(company)}
+
+This is an evidence-backed first draft, not a final investment recommendation. Treat the company as a candidate for deeper work only after verifying filings, annual reports, concalls, cash flow and governance.
+
+2. Financial and ownership snapshot
 Market cap INR ${record.marketCap || company.marketCap || "-"} cr; P/E ${record.pe || "-"}; ROE ${record.roe || "-"}%; ROCE ${
     record.roce || "-"
   }%; Debt/Equity ${record.debtEquity || "-"}; Sales growth ${record.salesGrowth || "-"}%; Profit growth ${
@@ -629,29 +838,42 @@ Promoter ${record.promoterHolding || "-"}%; FII ${record.fiiHolding || "-"}%; DI
     record.institutionalHolding || "-"
   }%.
 
-DVM:
+3. DVM signal
 Durability ${record.dvmDurability || "-"}; Valuation ${record.dvmValuation || "-"}; Momentum ${record.dvmMomentum || "-"}.
 
-Overview and DVM evidence:
-${compactText(intelligence.overview)}
+4. Multibagger potential
+${buildMultibaggerCase(company, record, intelligence)}
 
-Technical evidence:
+5. Potential trap warning
+${buildBearThesis(record, intelligence)}
+
+6. Business quality
+${buildBusinessSummary(company, record, intelligence)}
+
+7. Future prospects and catalysts
+${buildIndustryOpportunity(company, record, intelligence)}
+
+8. Technical and market sentiment evidence
 ${compactText(intelligence.technical)}
 
-Recent news and announcements:
+9. Recent news and announcements
 ${compactText(intelligence.news)}
 
-Corporate events:
+10. Corporate events
 ${compactText(intelligence.events)}
 
-Ownership, insider/SAST and deals:
+11. Ownership, insider/SAST and deals
 ${compactText([intelligence.shareholding, intelligence.sast, intelligence.bulkBlock].filter(Boolean).join("\n\n"))}
 
-Document search:
+12. Document search
 ${compactText(intelligence.documents)}
 
-Committee use:
-Treat Trendlyne data as source evidence, not an automatic buy/sell signal. Verify primary filings before position sizing.`;
+13. Next diligence
+- Read the latest annual report and auditor notes.
+- Check latest quarterly result and management commentary.
+- Confirm whether cash flow supports reported profits.
+- Compare valuation and ROCE against listed peers.
+- Decide whether this is a compounding candidate, cyclical opportunity, fair-value hold, or potential trap.`;
 }
 
 function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intelligence: TrendlyneIntelligenceRecord) {
@@ -663,11 +885,22 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
   const debt = Number(record.debtEquity);
   const financialStrength = clampScore(
     [
-      roce >= 20 ? 8 : roce >= 12 ? 6 : roce > 0 ? 4 : company.scores.financialStrength,
-      roe >= 18 ? 8 : roe >= 12 ? 6 : roe > 0 ? 4 : company.scores.financialStrength,
-      Number.isFinite(debt) ? (debt <= 0.5 ? 8 : debt <= 1 ? 6 : 4) : company.scores.financialStrength
+      ratioScore(record.roce, 20, 12),
+      ratioScore(record.roe, 18, 12),
+      Number.isFinite(debt) ? ratioScore(record.debtEquity, 0.5, 1, false) : company.scores.financialStrength
     ].reduce((sum, item) => sum + item, 0) / 3
   );
+  const growthRunway = clampScore((ratioScore(record.salesGrowth, 20, 10) + dvmMomentum) / 2);
+  const managementQuality = clampScore(
+    [
+      Number(record.promoterHolding) >= 45 ? 7 : Number(record.promoterHolding) > 0 ? 5 : company.scores.managementQuality,
+      /pledge|disposal|sell|sast|insider/i.test(intelligence.sast) ? 5 : 7
+    ].reduce((sum, item) => sum + item, 0) / 2
+  );
+  const governanceScore = /pledge|disposal|sell|sast|insider/i.test(intelligence.sast)
+    ? Math.min(company.scores.governance, 5)
+    : Math.max(company.scores.governance, managementQuality);
+  const cashFlowQuality = record.cfo ? clampScore((financialStrength + ratioScore(record.cfo, 1, 0)) / 2 + 1) : company.scores.cashFlowQuality;
   const trendlyneDocuments: Company["documents"] = [
     { name: "Trendlyne overview and DVM", type: "Other", status: "Key Source" },
     { name: "Trendlyne ownership and SAST", type: "Exchange Filing", status: "Key Source" },
@@ -707,27 +940,82 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
       mitigation: compactText(intelligence.sast, 220)
     });
   }
+  if (Number(record.profitGrowth) < 0) {
+    trendlyneRisks.push({
+      title: "Negative profit growth",
+      probability: "High",
+      impact: "High",
+      mitigation: `Profit growth is ${record.profitGrowth}%. Verify whether this is cyclical, one-off or structural.`
+    });
+  }
+  if ((roce > 0 && roce < 12) || (roe > 0 && roe < 12)) {
+    trendlyneRisks.push({
+      title: "Weak capital efficiency",
+      probability: "Medium",
+      impact: "High",
+      mitigation: `ROE/ROCE are ${record.roe || "-"}/${record.roce || "-"}%. Require evidence of improvement before assigning multibagger status.`
+    });
+  }
+  if (Number(record.pe) > 35 || (Number(record.dvmValuation) > 0 && Number(record.dvmValuation) < 45)) {
+    trendlyneRisks.push({
+      title: "Valuation risk",
+      probability: "Medium",
+      impact: "High",
+      mitigation: `P/E is ${record.pe || "-"} and DVM valuation is ${record.dvmValuation || "-"}. Test reverse DCF and peer valuation.`
+    });
+  }
+  if (Number(record.salesGrowth) >= 15 || Number(record.profitGrowth) >= 15) {
+    trendlyneCatalysts.push({
+      title: "Growth delivery watch",
+      date: "",
+      status: "Expected",
+      notes: `Track whether sales/profit growth of ${record.salesGrowth || "-"}/${record.profitGrowth || "-"}% continues in upcoming results.`
+    });
+  }
+  if (Number(record.dvmMomentum) > 0 && Number(record.dvmMomentum) < 45) {
+    trendlyneCatalysts.push({
+      title: "Momentum recovery trigger",
+      date: "",
+      status: "Expected",
+      notes: `DVM momentum is ${record.dvmMomentum}. Watch for price strength and improving result commentary before upgrading.`
+    });
+  }
+  const valuation = buildValuationCases(company, record);
+  const aiOutputCompany = {
+    ...company,
+    businessSummary: setIfDraft(company.businessSummary, buildBusinessSummary(company, record, intelligence)),
+    multibaggerCase: setIfDraft(company.multibaggerCase, buildMultibaggerCase(company, record, intelligence)),
+    industryOpportunity: setIfDraft(company.industryOpportunity, buildIndustryOpportunity(company, record, intelligence)),
+    managementAssessment: setIfDraft(company.managementAssessment, buildManagementAssessment(record, intelligence)),
+    bullThesis: setIfDraft(company.bullThesis, buildBullThesis(company, record, intelligence)),
+    bearThesis: setIfDraft(company.bearThesis, buildBearThesis(record, intelligence)),
+    keyAssumptions: setIfDraft(company.keyAssumptions, buildKeyAssumptions(record)),
+    thesisKillers: setIfDraft(company.thesisKillers, buildThesisKillers(record, intelligence))
+  };
 
   return {
-    ...company,
+    ...aiOutputCompany,
     status: company.status === "Watchlist" ? "Researching" : company.status,
     dataSource: `${company.dataSource || "Company search"} + Trendlyne MCP (${new Date(intelligence.importedAt).toISOString().slice(0, 10)})`,
-    businessSummary: company.businessSummary || compactText(intelligence.overview, 350),
-    industryOpportunity: company.industryOpportunity || compactText(intelligence.news || intelligence.events, 350),
-    managementAssessment: company.managementAssessment || compactText(intelligence.sast || intelligence.documents, 350),
-    aiOutput: trendlyneResearchBrief(company, record, intelligence),
+    aiPrompt: setIfDraft(company.aiPrompt, buildAnalystPrompt(company)),
+    aiOutput: trendlyneResearchBrief(aiOutputCompany, record, intelligence),
     documents: mergeDocuments(company.documents, trendlyneDocuments),
     catalysts: mergeCatalysts(company.catalysts, trendlyneCatalysts),
     risks: mergeRisks(company.risks, trendlyneRisks),
+    reviews: mergeReviews(company.reviews, [buildResearchReview(record, intelligence)]),
+    valuation,
     scores: {
       ...company.scores,
       businessQuality: dvmDurability,
+      managementQuality,
       financialStrength,
+      growthRunway,
+      moat: clampScore((dvmDurability + company.scores.moat) / 2),
       valuation: dvmValuation,
       industryTailwinds: dvmMomentum,
-      cashFlowQuality: record.cfo ? clampScore(financialStrength + 1) : company.scores.cashFlowQuality,
-      governance: trendlyneRisks.some((risk) => risk.title.includes("insider")) ? Math.min(company.scores.governance, 5) : company.scores.governance,
-      riskReward: clampScore((dvmValuation + dvmDurability + financialStrength) / 3)
+      cashFlowQuality,
+      governance: governanceScore,
+      riskReward: clampScore((dvmValuation + dvmDurability + financialStrength + growthRunway) / 4)
     }
   };
 }
@@ -1300,6 +1588,8 @@ export default function Home() {
     if (!record) return company;
     const priceForPe = asNumber(company.financials.currentPrice) || asNumber(record.currentPrice);
     const eps = asNumber(record.eps);
+    const recordPe = asNumber(record.pe);
+    const impliedEps = !eps && priceForPe && recordPe ? formatNumber(priceForPe / recordPe) : "";
 
     return {
       ...company,
@@ -1309,7 +1599,7 @@ export default function Home() {
         ...company.financials,
         revenue: record.revenue || company.financials.revenue,
         profit: record.profit || company.financials.profit,
-        eps: record.eps || company.financials.eps,
+        eps: record.eps || company.financials.eps || impliedEps,
         pe: eps && priceForPe ? formatNumber(priceForPe / eps) : record.pe || company.financials.pe,
         roe: record.roe || company.financials.roe,
         roce: record.roce || company.financials.roce,
@@ -1764,6 +2054,19 @@ export default function Home() {
     });
   }
 
+  function buildResearchFromSavedData() {
+    if (!selected) return;
+    const record = findFundamentals(selected.ticker, selected.name);
+    const intelligence = findTrendlyneIntelligence(selected.ticker, selected.name);
+    if (!record || !intelligence) {
+      window.alert("Sync Trendlyne Full first. IMRS needs both fundamentals and the intelligence pack to build the thesis.");
+      return;
+    }
+    const withFundamentals = applyFundamentals(selected, record);
+    saveCompany(enrichWithTrendlyne(withFundamentals, record, intelligence));
+    window.alert("Research thesis rebuilt from saved Trendlyne data.");
+  }
+
   function generateStructuredAnalysis() {
     if (!selected) return;
     const f = selected.financials;
@@ -2164,7 +2467,7 @@ Verify all figures, review primary documents, test thesis killers and complete v
                 <Download size={17} /> {trendlyneLoading ? "Checking" : "Check MCP"}
               </button>
               <button onClick={() => syncTrendlyneCompany()} disabled={!selected?.ticker || Boolean(syncingSymbol)}>
-                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync Trendlyne Full"}
+                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync + Build Thesis"}
               </button>
             </div>
           </div>
@@ -2179,7 +2482,7 @@ Verify all figures, review primary documents, test thesis killers and complete v
           </div>
           <div className={trendlyneStatus?.connected ? "info" : "note"}>
             {trendlyneStatus?.connected
-              ? `Trendlyne MCP is reachable through ${trendlyneStatus.transport}. IMRS can now inspect the exact tools before mapping live fundamentals.`
+              ? `Trendlyne MCP is reachable through ${trendlyneStatus.transport}. IMRS can now fill fundamentals and build a first-pass research thesis.`
               : trendlyneStatus?.error || trendlyneStatus?.message || "Add TRENDLYNE_MCP_URL in Vercel to enable this connector."}
           </div>
           {trendlyneStatus?.tools?.length ? (
@@ -2700,10 +3003,15 @@ Verify all figures, review primary documents, test thesis killers and complete v
               <span className="eyebrow">Research instruction</span>
               <h3>AI analysis prompt</h3>
               <textarea value={company.aiPrompt} onChange={(event) => updateSelected({ aiPrompt: event.target.value })} />
-              <button style={{ marginTop: 10 }} onClick={generateStructuredAnalysis}>
-                <FileText size={17} /> Generate structured draft
-              </button>
-              <div className="note">The first AI backend will replace this draft generator with real model analysis.</div>
+              <div className="toolbar" style={{ marginTop: 10 }}>
+                <button onClick={buildResearchFromSavedData} disabled={!trendlyneIntel}>
+                  <FileText size={17} /> Build thesis from Trendlyne
+                </button>
+                <button className="secondary" onClick={generateStructuredAnalysis}>
+                  <FileText size={17} /> Manual draft
+                </button>
+              </div>
+              <div className="note">Trendlyne builds the evidence-backed first draft. Manual draft uses only whatever is already typed in the record.</div>
             </section>
             <section className="panel">
               <span className="eyebrow">Research output</span>
