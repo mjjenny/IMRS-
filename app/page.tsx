@@ -66,6 +66,14 @@ type ValuationCase = {
   probability: string;
 };
 
+type CodexReport = {
+  id: string;
+  title: string;
+  importedAt: string;
+  format: string;
+  content: string;
+};
+
 type Company = {
   id: string;
   name: string;
@@ -88,6 +96,7 @@ type Company = {
   catalysts: Array<{ title: string; date: string; status: string; notes: string }>;
   reviews: Array<{ quarter: string; verdict: string; notes: string }>;
   documents: Array<{ name: string; type: string; status: string }>;
+  codexReports: CodexReport[];
   aiPrompt: string;
   aiOutput: string;
   financials: Financials;
@@ -446,6 +455,7 @@ function blankCompany(): Company {
     catalysts: [],
     reviews: [],
     documents: [],
+    codexReports: [],
     aiPrompt: "",
     aiOutput: "",
     financials: blankFinancials(),
@@ -553,7 +563,8 @@ function normalizeCompany(raw: Partial<Company>): Company {
     risks: raw.risks || [],
     catalysts: raw.catalysts || [],
     reviews: raw.reviews || [],
-    documents: raw.documents || []
+    documents: raw.documents || [],
+    codexReports: raw.codexReports || []
   };
 
   return {
@@ -2238,6 +2249,13 @@ function formatNumber(value: number | string | null | undefined, decimals = 2) {
   return fixed.replace(/\.?0+$/, "");
 }
 
+function safeFileName(value: string) {
+  return (value || "IMRS")
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
 function excelDate(value: number | string | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "";
   const date = new Date(Math.round((value - 25569) * 86400 * 1000));
@@ -3086,6 +3104,107 @@ export default function Home() {
     link.download = `imrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function downloadJson(filename: string, payload: unknown) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportCodexResearchPacket() {
+    if (!selected) return;
+    const fundamentalsRecord = findFundamentals(selected.ticker, selected.name);
+    const shareholdingRecord = findShareholding(selected.ticker, selected.name);
+    const trendlyneIntel = findTrendlyneIntelligence(selected.ticker, selected.name);
+    const packet = {
+      packetType: "IMRS_CODEX_RESEARCH_PACKET",
+      version: "1.0",
+      generatedAt: new Date().toISOString(),
+      objective:
+        "Use Codex as the dynamic research engine. Reconcile the attached Kite, Trendlyne, NSE/shareholding and IMRS data into an institutional-grade stock research report.",
+      instructionsForCodex: [
+        "Do not rely on fixed app scoring alone. Inspect the company case-by-case.",
+        "Triangulate and reconcile source contradictions instead of leaving major sections blank.",
+        "Use audited filings/NSE disclosures first, Trendlyne next, Kite price next, and derived calculations only when labelled.",
+        "Produce a detailed report covering business model, financial quality, management, ownership, industry runway, valuation, catalysts, risks, multibagger potential and trap risk.",
+        "Flag data gaps, but still provide a provisional investment view with confidence level and exact follow-up source requests.",
+        "Never use negative P/E or negative implied target prices. Rebuild valuation from validated or derived inputs."
+      ],
+      company: selected,
+      fundamentals: fundamentalsRecord || null,
+      shareholding: shareholdingRecord || null,
+      trendlyne: trendlyneIntel || null,
+      appGeneratedReport: buildInvestmentReportText(selected, fundamentalsRecord, trendlyneIntel),
+      sourceCoverage: sourceCoverageRows(selected, fundamentalsRecord, trendlyneIntel).map(([source, status]) => ({ source, status })),
+      sanityCheck: sanityCheckItems(selected, fundamentalsRecord, trendlyneIntel),
+      needsVerification: needsVerificationItems(selected, fundamentalsRecord, trendlyneIntel),
+      valuation: {
+        bear: {
+          ...selected.valuation.bear,
+          impliedPrice: valuationPriceText(selected, selected.valuation.bear, fundamentalsRecord)
+        },
+        base: {
+          ...selected.valuation.base,
+          impliedPrice: valuationPriceText(selected, selected.valuation.base, fundamentalsRecord)
+        },
+        bull: {
+          ...selected.valuation.bull,
+          impliedPrice: valuationPriceText(selected, selected.valuation.bull, fundamentalsRecord)
+        },
+        weightedExpectedPrice: weightedExpectedPriceText(selected, fundamentalsRecord)
+      }
+    };
+
+    downloadJson(
+      `${safeFileName(selected.ticker || selected.name)}-IMRS-Codex-Research-Packet-${new Date().toISOString().slice(0, 10)}.json`,
+      packet
+    );
+  }
+
+  async function importCodexReport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || !selected) return;
+
+    try {
+      const text = await file.text();
+      let title = file.name.replace(/\.[^.]+$/, "");
+      let content = text;
+      let format = file.name.split(".").pop()?.toLowerCase() || "txt";
+
+      if (format === "json") {
+        const parsed = JSON.parse(text) as { title?: string; report?: string; content?: string; markdown?: string };
+        title = parsed.title || title;
+        content = parsed.report || parsed.markdown || parsed.content || text;
+        format = "json";
+      }
+
+      if (!content.trim()) throw new Error("The report file is empty.");
+
+      const importedReport: CodexReport = {
+        id: uid(),
+        title,
+        importedAt: new Date().toISOString(),
+        format,
+        content
+      };
+
+      updateSelected({
+        aiOutput: content,
+        codexReports: [importedReport, ...(selected.codexReports || [])],
+        documents: mergeDocuments(selected.documents, [{ name: title, type: "Other", status: "Key Source" }])
+      });
+      setActiveTab("report");
+      window.alert("Codex report imported into this company record.");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not import this Codex report.");
+    } finally {
+      event.target.value = "";
+    }
   }
 
   function importData(event: ChangeEvent<HTMLInputElement>) {
@@ -4053,6 +4172,13 @@ export default function Home() {
               <button onClick={generateOpenAiReport} disabled={aiGenerating}>
                 <NotebookText size={17} /> {aiGenerating ? "Generating..." : "Generate AI Report"}
               </button>
+              <button className="secondary" onClick={exportCodexResearchPacket}>
+                <Download size={17} /> Export Packet for Codex
+              </button>
+              <label className="secondary file-label">
+                <Upload size={17} /> Import Codex Report
+                <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} />
+              </label>
               <button className="secondary" onClick={exportSelectedReportPdf}>
                 <FileDown size={17} /> Export PDF
               </button>
@@ -4175,6 +4301,47 @@ export default function Home() {
               </button>
             </div>
             <textarea className="report-output" value={reportText} onChange={(event) => updateSelected({ aiOutput: event.target.value })} />
+          </section>
+
+          <section className="panel">
+            <div className="section-head">
+              <div>
+                <span className="eyebrow">Codex research engine</span>
+                <h2>Final report library</h2>
+              </div>
+              <div className="toolbar">
+                <button className="secondary" onClick={exportCodexResearchPacket}>
+                  <Download size={17} /> Export Packet
+                </button>
+                <label className="secondary file-label">
+                  <Upload size={17} /> Import Report
+                  <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} />
+                </label>
+              </div>
+            </div>
+            {company.codexReports?.length ? (
+              <div className="stack">
+                {company.codexReports.map((report) => (
+                  <article className="doc-card" key={report.id}>
+                    <div>
+                      <strong>{report.title}</strong>
+                      <small>
+                        {report.format.toUpperCase()} - imported {new Date(report.importedAt).toLocaleString()}
+                      </small>
+                    </div>
+                    <div className="toolbar">
+                      <button className="secondary" onClick={() => updateSelected({ aiOutput: report.content })}>
+                        Use in report
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="info">
+                Export the research packet, let Codex generate the institutional report, then import the final text here for storage and PDF export.
+              </div>
+            )}
           </section>
         </div>
       );
