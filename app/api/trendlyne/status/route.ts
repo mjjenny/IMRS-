@@ -26,7 +26,8 @@ export async function GET() {
       toolCount: tools.tools.length,
       tools: tools.tools.map((tool) => ({
         name: tool.name,
-        description: tool.description || ""
+        description: tool.description || "",
+        inputSchema: tool.inputSchema
       }))
     });
   } catch (error) {
