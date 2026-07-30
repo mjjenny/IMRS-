@@ -908,7 +908,7 @@ function getReportBullets(company: Company, record?: FundamentalsRecord) {
       ? [
           "Profit growth remains weak or negative while valuation stays elevated.",
           "ROE/ROCE fail to recover, suggesting the business is not earning enough on capital.",
-          "Trendlyne/NSE evidence points to governance, insider, cash-flow or ownership deterioration."
+          "Governance, insider activity, cash-flow quality or ownership trends deteriorate."
         ]
       : [
           "Two or more quarters miss the core growth or margin assumptions.",
@@ -1095,12 +1095,6 @@ function sourceCoverageRows(company: Company, record?: FundamentalsRecord, intel
   return rows;
 }
 
-function sourceCoverageText(company: Company, record?: FundamentalsRecord, intelligence?: TrendlyneIntelligenceRecord) {
-  return sourceCoverageRows(company, record, intelligence)
-    .map(([source, status]) => `- ${source}: ${status}`)
-    .join("\n");
-}
-
 function scrubReportText(value: string) {
   if (!value.trim()) return "";
   if (looksLikeRawTrendlyneText(value)) return "";
@@ -1155,11 +1149,8 @@ Conviction score: ${score(company)}/100
 Multibagger probability: ${diagnostics.multibaggerProbability}/100
 Trap probability: ${diagnostics.trapProbability}/100
 Research framework: ${framework}
-Data-quality gate: ${review.p0.length ? `FAILED (${review.p0.length} P0 issue${review.p0.length > 1 ? "s" : ""})` : "Passed first-level checks"}
+Evidence confidence: ${review.p0.length ? `LOW (${review.p0.length} critical evidence issue${review.p0.length > 1 ? "s" : ""})` : "Passed first-level checks"}
 Provisional investment view: ${provisionalView}
-
-Source coverage and reconciliation map:
-${sourceCoverageText(company, record, intelligence)}
 
 Business quality:
 ${savedResearchText(company.businessSummary, businessModelDraft(company, record))}
@@ -1190,7 +1181,7 @@ Bear/base/bull implied prices are ${valuationPriceText(company, company.valuatio
   )} and ${valuationPriceText(company, company.valuation.bull, record)}. Probability-weighted expected price is ${weightedExpectedPriceText(
     company,
     record
-  )}. This is a scenario output, not a guaranteed target. Scenario EPS should use the same validated EPS basis as the financial table; if the data-quality gate fails, treat scenario prices as provisional.
+  )}. This is a scenario output, not a guaranteed target. Scenario EPS should use the same validated EPS basis as the financial table; if evidence confidence is low, treat scenario prices as provisional.
 Implied upside/downside: ${impliedUpside}.
 
 Growth runway:
@@ -1295,21 +1286,6 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
     ([key, label]) => [label, `${company.scores[key]}/10`] as [string, string]
   );
 
-  const trendlyneSections = trendlyneIntel
-    ? [
-        ["Overview and DVM", trendlyneIntel.overview],
-        ["Technicals", trendlyneIntel.technical],
-        ["News and announcements", trendlyneIntel.news],
-        ["Corporate events", trendlyneIntel.events],
-        ["Ownership", trendlyneIntel.shareholding],
-        ["Insider / SAST", trendlyneIntel.sast],
-        ["Bulk and block deals", trendlyneIntel.bulkBlock],
-        ["Document search", trendlyneIntel.documents]
-      ]
-        .map(([title, value]) => printableSection(`Trendlyne - ${title}`, `<p>${nl2br(cleanTrendlyneIntel(title, value))}</p>`))
-        .join("")
-    : printableSection("Trendlyne intelligence", "<p>No Trendlyne intelligence pack is saved for this company yet.</p>");
-
   return `<!doctype html>
 <html>
 <head>
@@ -1361,12 +1337,11 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
 
   ${printableSection("Executive verdict", `<p>${escapeHtml(diagnostics.finalVerdict)}</p>`)}
   ${printableSection("Sanity check before verdict", printableList(sanity))}
-  ${printableSection("Source coverage and reconciliation", printableTable(sourceCoverageRows(company, record, trendlyneIntel)))}
   ${printableSection(
-    "Data-quality gate",
+    "Evidence confidence",
     `<p>${
       review.p0.length
-        ? `Failed: ${review.p0.length} P0 issue${review.p0.length > 1 ? "s" : ""}. Verdict and valuation are provisional until corrected.`
+        ? `Low confidence: ${review.p0.length} critical evidence issue${review.p0.length > 1 ? "s" : ""}. Verdict and valuation are provisional until corrected.`
         : "Passed first-level checks."
     }</p>`
   )}
@@ -1438,13 +1413,14 @@ function buildPrintableReportHtml(company: Company, trendlyneIntel?: TrendlyneIn
   )}
   ${printableSection(
     "Documents",
-    company.documents.length ? printableTable(company.documents.map((document) => [document.name, `${document.type}; ${document.status}`])) : "<p>No documents recorded.</p>"
+    company.documents.length
+      ? printableTable(company.documents.map((document) => [readerSafeText(document.name), `${readerSafeText(document.type)}; ${readerSafeText(document.status)}`]))
+      : "<p>No documents recorded.</p>"
   )}
   ${printableSection(
     "Quarterly reviews",
     company.reviews.length ? printableTable(company.reviews.map((review) => [review.quarter, `${review.verdict}. ${review.notes}`])) : "<p>No reviews recorded.</p>"
   )}
-  ${trendlyneSections}
 </body>
 </html>`;
 }
@@ -1505,6 +1481,16 @@ function isRawEvidenceLine(line: string) {
 
 function stripRawTrendlyneText(value: string) {
   return looksLikeRawTrendlyneText(value) ? "" : value;
+}
+
+function readerSafeText(value: string) {
+  return value
+    .replace(/^Trendlyne\s+/i, "")
+    .replace(/\bTrendlyne\b/gi, "Market intelligence")
+    .replace(/\bKite\b/gi, "Market price")
+    .replace(/\bNSE\b/gi, "Exchange")
+    .replace(/\bMCP\b/gi, "data")
+    .trim();
 }
 
 function shouldReplaceGeneratedItem(value: string) {
@@ -1646,7 +1632,7 @@ function buildBearThesis(company: Company, record: FundamentalsRecord, intellige
   ].filter(Boolean);
 
   if (review.p0.length) {
-    return `Bear case: verdict withheld until the data-quality gate is repaired. Do not label the stock a value trap from failed or stale metrics.
+    return `Bear case: verdict withheld until evidence confidence improves. Do not label the stock a value trap from failed or stale metrics.
 
 Failed checks:
 ${review.p0.map((item) => `- ${item}`).join("\n")}
@@ -1657,7 +1643,7 @@ Once the data is corrected, reassess whether weakness is structural, cyclical, v
   return `Bear case: the stock may become a value trap or momentum trap if growth slows, margins compress, ROCE/ROE remain weak, or valuation is high relative to actual earnings delivery.
 
 Current concerns:
-${concerns.length ? concerns.map((item) => `- ${item}`).join("\n") : "- No single fatal concern was detected from the available Trendlyne snapshot, but primary filings still need review."}
+${concerns.length ? concerns.map((item) => `- ${item}`).join("\n") : "- No single fatal concern was detected from the available evidence, but primary filings still need review."}
 
 Trap test: avoid treating a popular name as a multibagger unless cash flow, capital allocation, governance and valuation all support the story.`;
 }
@@ -1686,15 +1672,17 @@ function buildThesisKillers(record: FundamentalsRecord, intelligence: TrendlyneI
 - Operating cash flow fails to track reported profits.
 - Promoter pledge, large insider selling, adverse SAST activity, auditor concerns or governance red flags appear.
 - DVM durability/momentum weakens materially.
-- Primary filings contradict the Trendlyne/NSE data used in this draft.${hasMeaningfulText(sastText) ? `\n\nOwnership/SAST evidence to monitor:\n${compactText(sastText, 260)}` : ""}`;
+- Public filings contradict the saved metrics used in this draft.${hasMeaningfulText(sastText) ? `\n\nOwnership/SAST evidence to monitor:\n${compactText(sastText, 260)}` : ""}`;
 }
 
 function buildAnalystPrompt(company: Company) {
   return `Act as an institutional equity research analyst. Using the source-backed data already saved in IMRS for ${company.name}, produce a balanced investment memo covering business quality, industry runway, management, financial strength, valuation, catalysts, risks, multibagger potential and potential trap warnings.
 
 Strict rules:
-- Do not leave a major report section blank merely because one source is incomplete. Triangulate from the company identity, Trendlyne snapshot, Kite price, NSE/shareholding data and derived calculations, then label confidence.
-- Use the evidence hierarchy: audited filings and exchange filings first, Trendlyne fundamentals/intelligence second, Kite price third, derived calculations fourth. Never mix these without labelling the basis.
+- The final reader-facing report must discuss only the stock. Do not mention provider names, connector names, backend systems, APIs, MCP, raw sync errors, payloads, OCR fragments, JSON, table headers or data-pipeline problems.
+- If evidence is incomplete or contradictory, convert that into investment language such as low valuation confidence, ownership risk, margin evidence needs confirmation, or verdict withheld until share-basis math is reconciled.
+- Do not leave a major report section blank merely because one evidence source is incomplete. Triangulate from the company identity, structured fundamentals, market price, ownership data and derived calculations, then label confidence.
+- Use the evidence hierarchy internally: audited filings and exchange filings first, structured fundamentals and ownership data second, market price third, derived calculations fourth. Never mix these without labelling the basis.
 - When a raw metric fails validation, use a labelled proxy if possible: P/E may be derived from price/EPS; net margin may be derived from net profit/revenue; share count may be cross-checked from market cap/price and profit/EPS. Put unreconciled items under Needs Verification.
 - Business and industry sections must describe the actual business, customers, end-markets, margin drivers and competitive position. Do not substitute ownership tables, technicals or raw MCP headers for business analysis.
 - Run a sanity check before the executive verdict. If an established company shows negative operating margin, a massive profit drop, unusually weak ROE/ROCE or contradictory metrics, ask whether exceptional items, base effects or data extraction errors explain it.
@@ -1705,9 +1693,9 @@ Strict rules:
 - For companies above INR 500,000 crore market cap, switch from a small-cap 5x/10x multibagger lens to a compounder/re-rating lens. For other large caps, still assess multibagger potential but require stronger valuation and growth proof.
 - For conglomerates or diversified businesses, require segment analysis before a final verdict.
 - Valuation must never use negative P/E or negative implied target prices. If EPS or P/E is invalid, state that the scenario is not valid and rebuild from validated or derived inputs.
-- Always include a provisional investment view, source coverage map, data confidence rating, and explicit next evidence requests even when some data is unavailable.
+- Always include a provisional investment view, evidence confidence rating, and explicit next evidence requests even when some data is unavailable.
 - Do not output Trap probability 100/100 or Multibagger probability 100/100. Use calibrated 5-95 ranges and withhold verdict when P0 data checks fail.
-- Do not repeat raw Trendlyne payloads, headers, OCR fragments or truncated table dumps in the final report. Summarize only clean evidence and put messy source output under Needs Verification.
+- Do not repeat raw payloads, headers, OCR fragments or truncated table dumps in the final report. Summarize only clean evidence and put messy source output under Needs Verification.
 - Separate facts from assumptions and do not give a buy/sell recommendation unless the evidence is sufficient.`;
 }
 
