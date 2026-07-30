@@ -64,7 +64,15 @@ Promoter holding is not present in the tested Screener company workbook, so it r
 
 ## NSE Shareholding Pattern
 
-Use the Fundamentals page to upload NSE shareholding pattern CSV files from:
+IMRS automatically attempts to sync promoter holding from NSE when an NSE company is imported from search. It uses:
+
+```text
+/api/nse/shareholding
+```
+
+This route fetches the exchange shareholding feed server-side and returns the latest promoter/public holding fields to the app.
+
+The Fundamentals page also keeps a manual fallback for NSE shareholding pattern CSV files from:
 
 ```text
 NSE > Corporate Filings > Shareholding Pattern > Download CSV
@@ -77,6 +85,24 @@ Promoter holding %, public holding %, employee trust holding %, as-on date, subm
 ```
 
 This is the preferred source for promoter holding because it comes from the exchange filing rather than the Screener workbook.
+
+## Data Automation Roadmap
+
+Current automated sources:
+
+```text
+Kite Connect: instruments and live LTP
+NSE: shareholding pattern summary
+```
+
+Current upload fallback:
+
+```text
+Screener Excel: historical financial statements and derived ratios
+NSE CSV: shareholding pattern if NSE sync fails
+```
+
+For fully automated fundamentals, use a licensed provider or an official export workflow such as Trendlyne Excel Connect/Data Downloader or a dedicated financial-data API. Avoid scraping subscription websites.
 
 The old single-file version is preserved at:
 

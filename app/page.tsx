@@ -733,6 +733,7 @@ export default function Home() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchMessage, setSearchMessage] = useState("Kite-ready search is available. Live LTP needs Kite credentials.");
   const [kiteStatus, setKiteStatus] = useState<KiteStatus | null>(null);
+  const [syncingSymbol, setSyncingSymbol] = useState("");
   const [screen, setScreen] = useState({ roce: "15", growth: "15", debt: "1", pe: "50" });
 
   useEffect(() => {
@@ -883,6 +884,45 @@ export default function Home() {
     };
   }
 
+  async function fetchNseShareholding(symbol: string) {
+    const response = await fetch(`/api/nse/shareholding?symbol=${encodeURIComponent(symbol)}`, {
+      cache: "no-store"
+    });
+    const payload = (await response.json()) as { record?: ShareholdingRecord; error?: string };
+    if (!response.ok || !payload.record) {
+      throw new Error(payload.error || "No NSE shareholding record found.");
+    }
+    return payload.record;
+  }
+
+  async function syncNseShareholding(company = selected) {
+    if (!company?.ticker) {
+      window.alert("Select a company with an NSE ticker first.");
+      return;
+    }
+
+    setSyncingSymbol(company.ticker);
+    try {
+      const record = await fetchNseShareholding(company.ticker);
+      const key = record.ticker || company.ticker;
+      setData((current) => ({
+        ...current,
+        shareholding: { ...current.shareholding, [key]: record },
+        companies: current.companies.map((item) => {
+          const matchesTicker = item.ticker.toUpperCase() === company.ticker.toUpperCase();
+          const matchesName = normalizeKey(record.companyName).includes(normalizeKey(item.name));
+          return matchesTicker || matchesName ? applyShareholding(item, record) : item;
+        })
+      }));
+      setSelectedId(company.id);
+      window.alert(`Synced NSE shareholding for ${record.companyName}: promoter holding ${record.promoterHolding || "-"}%.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not sync NSE shareholding.");
+    } finally {
+      setSyncingSymbol("");
+    }
+  }
+
   function createCompany() {
     const company = blankCompany();
     setData((current) => ({ ...current, companies: [company, ...current.companies] }));
@@ -891,11 +931,14 @@ export default function Home() {
     setActivePage("research");
   }
 
-  function importStarterCompany(item: CompanySearchResult) {
+  async function importStarterCompany(item: CompanySearchResult) {
     const existing = data.companies.find((company) => company.ticker.toUpperCase() === item.ticker);
     if (existing) {
       setSelectedId(existing.id);
       setActivePage("research");
+      if (!existing.financials.promoterHolding) {
+        await syncNseShareholding(existing);
+      }
       return;
     }
 
@@ -921,12 +964,25 @@ export default function Home() {
         profitGrowth: item.profitGrowth
       }
     };
-    const enrichedCompany = applyShareholding(
-      applyFundamentals(company, findFundamentals(item.ticker, item.name)),
-      findShareholding(item.ticker, item.name)
-    );
+    let fetchedShareholding: ShareholdingRecord | undefined;
+    setSyncingSymbol(item.ticker);
+    try {
+      fetchedShareholding = item.exchange === "NSE" || item.source?.includes("Kite") ? await fetchNseShareholding(item.ticker) : undefined;
+    } catch {
+      fetchedShareholding = undefined;
+    } finally {
+      setSyncingSymbol("");
+    }
 
-    setData((current) => ({ ...current, companies: [enrichedCompany, ...current.companies] }));
+    const matchedShareholding = fetchedShareholding || findShareholding(item.ticker, item.name);
+    const enrichedCompany = applyShareholding(applyFundamentals(company, findFundamentals(item.ticker, item.name)), matchedShareholding);
+    const shareholdingKey = fetchedShareholding?.ticker || item.ticker;
+
+    setData((current) => ({
+      ...current,
+      shareholding: fetchedShareholding ? { ...current.shareholding, [shareholdingKey]: fetchedShareholding } : current.shareholding,
+      companies: [enrichedCompany, ...current.companies]
+    }));
     setSelectedId(enrichedCompany.id);
     setActivePage("research");
   }
@@ -1479,14 +1535,19 @@ Verify all figures, review primary documents, test thesis killers and complete v
               <span className="eyebrow">Exchange filing</span>
               <h2>NSE Shareholding CSV</h2>
             </div>
-            <label className="file-button">
-              <Upload size={17} /> Upload CSV
-              <input type="file" accept=".csv" onChange={importShareholding} />
-            </label>
+            <div className="top-actions">
+              <button className="secondary" onClick={() => syncNseShareholding()} disabled={!selected?.ticker || Boolean(syncingSymbol)}>
+                <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync NSE"}
+              </button>
+              <label className="file-button">
+                <Upload size={17} /> Upload CSV
+                <input type="file" accept=".csv" onChange={importShareholding} />
+              </label>
+            </div>
           </div>
           <div className="info">
-            Upload the NSE shareholding pattern CSV from Corporate Filings. IMRS reads promoter holding, public holding, employee trust
-            holding, filing dates and the XBRL source link.
+            IMRS now syncs promoter holding directly from NSE when a company is imported from search. Use Sync NSE to refresh the
+            selected company, or upload a CSV only as a fallback.
           </div>
           <div className="note">This fills the Promoter holding % field from the latest row in the NSE filing.</div>
         </section>
