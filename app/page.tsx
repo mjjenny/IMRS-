@@ -942,6 +942,9 @@ function cleanTrendlyneIntel(title: string, value: string) {
 
   const clean = lines.join("\n").trim();
   if (clean) return clean;
+  if (looksLikeRawTrendlyneText(value)) {
+    return "Trendlyne returned structured table data for this section. No clean summary rows were extracted; review the source table before using it in the thesis.";
+  }
   return value
     .split(/\r?\n/)
     .map((line) => line.trim())
