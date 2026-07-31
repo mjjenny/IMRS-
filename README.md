@@ -194,6 +194,24 @@ python tools/render_report_pdf.py path/to/final-report.json path/to/final-report
 
 The renderer accepts the same imported report JSON used by IMRS. It uses WeasyPrint when available and keeps the design focused on a polished institutional stock report.
 
+## Report Quality And Publishing Pipeline
+
+Before publishing a Codex-written final report, run the quality gate:
+
+```bash
+npm run report:qc -- public/reports/SAKAR.json --strict
+```
+
+The quality gate checks that the report follows `docs/REPORT_TEMPLATE.md`: stock-only language, required institutional sections, calibrated scores, valuation scenarios, and no raw connector or data-pipeline text.
+
+To validate a report, render the premium PDF, run the app checks, commit only that report JSON and push:
+
+```bash
+npm run report:publish -- -Report public/reports/SAKAR.json -Commit -Push
+```
+
+The publishing script intentionally avoids `git add .`, so loose screenshots, exports or temporary files are not accidentally committed. Generated premium PDFs are written to `report-output/`, which is ignored by Git.
+
 ## Data Automation Roadmap
 
 Current automated sources:
