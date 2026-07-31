@@ -3304,7 +3304,7 @@ export default function Home() {
 
     return {
       ...company,
-      marketCap: recordMarketCap || company.marketCap,
+      marketCap: recordMarketCap || (hasUsableMarketCap(company.marketCap) ? company.marketCap : ""),
       dataSource: `${company.dataSource || "Company search"} + ${record.source} (${record.reportDate || record.importedAt.slice(0, 10)})`,
       financials: {
         ...company.financials,
@@ -3315,17 +3315,31 @@ export default function Home() {
         roe: record.roe || company.financials.roe,
         roce: record.roce || company.financials.roce,
         debtEquity: record.debtEquity || company.financials.debtEquity,
-        promoterHolding: hasUsablePercent(record.promoterHolding) ? record.promoterHolding : company.financials.promoterHolding,
-        fiiHolding: hasUsablePercent(record.fiiHolding) ? record.fiiHolding : company.financials.fiiHolding,
-        diiHolding: hasUsablePercent(record.diiHolding) ? record.diiHolding : company.financials.diiHolding,
+        promoterHolding: hasUsablePercent(record.promoterHolding)
+          ? record.promoterHolding
+          : hasUsablePercent(company.financials.promoterHolding)
+            ? company.financials.promoterHolding
+            : "",
+        fiiHolding: hasUsablePercent(record.fiiHolding)
+          ? record.fiiHolding
+          : hasUsablePercent(company.financials.fiiHolding)
+            ? company.financials.fiiHolding
+            : "",
+        diiHolding: hasUsablePercent(record.diiHolding)
+          ? record.diiHolding
+          : hasUsablePercent(company.financials.diiHolding)
+            ? company.financials.diiHolding
+            : "",
         institutionalHolding: hasUsablePercent(record.institutionalHolding)
           ? record.institutionalHolding
-          : company.financials.institutionalHolding,
+          : hasUsablePercent(company.financials.institutionalHolding)
+            ? company.financials.institutionalHolding
+            : "",
         salesGrowth: record.salesGrowth || company.financials.salesGrowth,
         profitGrowth: record.profitGrowth || company.financials.profitGrowth,
         opm: record.opm || company.financials.opm,
         cfo: record.cfo || company.financials.cfo,
-        currentPrice: recordPrice || company.financials.currentPrice,
+        currentPrice: recordPrice || (hasUsableMarketPrice(company.financials.currentPrice) ? company.financials.currentPrice : ""),
         dvmDurability: record.dvmDurability || company.financials.dvmDurability,
         dvmValuation: record.dvmValuation || company.financials.dvmValuation,
         dvmMomentum: record.dvmMomentum || company.financials.dvmMomentum,
@@ -3343,7 +3357,7 @@ export default function Home() {
       dataSource: `${company.dataSource || "Company search"} + ${record.source} (${record.asOnDate || record.importedAt.slice(0, 10)})`,
       financials: {
         ...company.financials,
-        promoterHolding: promoterHolding || company.financials.promoterHolding
+        promoterHolding: promoterHolding || (hasUsablePercent(company.financials.promoterHolding) ? company.financials.promoterHolding : "")
       }
     };
   }
@@ -3581,19 +3595,19 @@ export default function Home() {
       isin: item.isin || "",
       listedSeries: item.listedSeries || "",
       sector: item.sector,
-      marketCap: item.marketCap,
+      marketCap: hasUsableMarketCap(item.marketCap) ? item.marketCap : "",
       status: "Researching",
       dataSource: `${item.source || item.exchange || "Company search"}, imported ${new Date().toISOString().slice(0, 10)}`,
       businessSummary: item.note,
       industryOpportunity: "Add primary-source evidence from filings, presentations and industry data.",
       financials: {
         ...blankFinancials(),
-        currentPrice: item.currentPrice,
+        currentPrice: hasUsableMarketPrice(item.currentPrice) ? item.currentPrice : "",
         pe: item.pe,
         roe: item.roe,
         roce: item.roce,
         debtEquity: item.debtEquity,
-        promoterHolding: item.promoterHolding,
+        promoterHolding: hasUsablePercent(item.promoterHolding) ? item.promoterHolding : "",
         salesGrowth: item.salesGrowth,
         profitGrowth: item.profitGrowth
       }
