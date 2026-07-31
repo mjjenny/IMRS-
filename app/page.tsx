@@ -2538,6 +2538,12 @@ function tickersMatch(left: string, right: string) {
   return externalLookupTicker(left) === externalLookupTicker(right);
 }
 
+function bseLookupCode(company: Pick<Company, "ticker" | "bseCode">) {
+  const code = (company.bseCode || "").trim();
+  if (code) return code;
+  return /^\d+$/.test(company.ticker.trim()) ? company.ticker.trim() : "";
+}
+
 function companiesMatch(left: Pick<Company, "ticker" | "exchange" | "bseCode">, right: CompanySearchResult) {
   if (left.bseCode && right.bseCode && left.bseCode === right.bseCode) return true;
   if (!tickersMatch(left.ticker, right.ticker)) return false;
@@ -3206,6 +3212,28 @@ export default function Home() {
     return payload.record;
   }
 
+  async function fetchBseShareholding(code: string) {
+    const response = await fetch(`/api/bse/shareholding?code=${encodeURIComponent(code)}`, {
+      cache: "no-store"
+    });
+    const payload = (await response.json()) as { record?: ShareholdingRecord; error?: string };
+    if (!response.ok || !payload.record) {
+      throw new Error(payload.error || "No BSE shareholding record found.");
+    }
+    return payload.record;
+  }
+
+  async function fetchBseFinancials(code: string) {
+    const response = await fetch(`/api/bse/financials?code=${encodeURIComponent(code)}`, {
+      cache: "no-store"
+    });
+    const payload = (await response.json()) as { record?: FundamentalsRecord; error?: string };
+    if (!response.ok || !payload.record) {
+      throw new Error(payload.error || "No BSE financial record found.");
+    }
+    return payload.record;
+  }
+
   async function fetchTrendlyneCompany(symbol: string) {
     const response = await fetch(`/api/trendlyne/company?symbol=${encodeURIComponent(symbol)}`, {
       cache: "no-store"
@@ -3233,15 +3261,16 @@ export default function Home() {
       window.alert("Select a company with a ticker first.");
       return;
     }
-    if (company.exchange && company.exchange !== "NSE") {
-      window.alert("Direct exchange filing sync is currently available for NSE records only. Use Data Hub upload or market-intelligence sync for this BSE record.");
+    const isBseRecord = company.exchange === "BSE";
+    const lookupSymbol = isBseRecord ? bseLookupCode(company) : externalLookupTicker(company.ticker);
+    if (!lookupSymbol) {
+      window.alert("This BSE record needs a BSE scrip code before direct filing sync can run.");
       return;
     }
 
     setSyncingSymbol(company.ticker);
     try {
-      const lookupSymbol = externalLookupTicker(company.ticker);
-      const record = await fetchNseShareholding(lookupSymbol);
+      const record = isBseRecord ? await fetchBseShareholding(lookupSymbol) : await fetchNseShareholding(lookupSymbol);
       const key = record.ticker || company.ticker;
       setData((current) => ({
         ...current,
@@ -3253,9 +3282,13 @@ export default function Home() {
         })
       }));
       setSelectedId(company.id);
-      window.alert(`Synced NSE shareholding for ${record.companyName}: promoter holding ${record.promoterHolding || "-"}%.`);
+      window.alert(
+        `Synced ${isBseRecord ? "BSE" : "NSE"} shareholding for ${record.companyName}: promoter holding ${
+          record.promoterHolding || "-"
+        }%.`
+      );
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Could not sync NSE shareholding.");
+      window.alert(error instanceof Error ? error.message : "Could not sync exchange shareholding.");
     } finally {
       setSyncingSymbol("");
     }
@@ -3266,15 +3299,16 @@ export default function Home() {
       window.alert("Select a company with a ticker first.");
       return;
     }
-    if (company.exchange && company.exchange !== "NSE") {
-      window.alert("Direct financial-result sync is currently available for NSE records only. Use Data Hub upload or market-intelligence sync for this BSE record.");
+    const isBseRecord = company.exchange === "BSE";
+    const lookupSymbol = isBseRecord ? bseLookupCode(company) : externalLookupTicker(company.ticker);
+    if (!lookupSymbol) {
+      window.alert("This BSE record needs a BSE scrip code before direct financial sync can run.");
       return;
     }
 
     setSyncingSymbol(company.ticker);
     try {
-      const lookupSymbol = externalLookupTicker(company.ticker);
-      const record = await fetchNseFinancials(lookupSymbol);
+      const record = isBseRecord ? await fetchBseFinancials(lookupSymbol) : await fetchNseFinancials(lookupSymbol);
       const key = record.ticker || company.ticker;
       setData((current) => ({
         ...current,
@@ -3286,9 +3320,13 @@ export default function Home() {
         })
       }));
       setSelectedId(company.id);
-      window.alert(`Synced NSE financials for ${record.companyName}: sales INR ${record.revenue || "-"} cr.`);
+      window.alert(
+        `Synced ${isBseRecord ? "BSE" : "NSE"} financials for ${record.companyName}: ${
+          record.revenue ? `sales INR ${record.revenue} cr` : `price INR ${record.currentPrice || "-"}`
+        }.`
+      );
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Could not sync NSE financials.");
+      window.alert(error instanceof Error ? error.message : "Could not sync exchange financials.");
     } finally {
       setSyncingSymbol("");
     }
@@ -3364,10 +3402,13 @@ export default function Home() {
     if (existing) {
       setSelectedId(existing.id);
       setActivePage("research");
-      if ((!existing.exchange || existing.exchange === "NSE") && !existing.financials.promoterHolding) {
+      if ((!existing.exchange || existing.exchange === "NSE" || existing.exchange === "BSE") && !existing.financials.promoterHolding) {
         await syncNseShareholding(existing);
       }
-      if ((!existing.exchange || existing.exchange === "NSE") && (!existing.financials.revenue || !existing.financials.profit)) {
+      if (
+        (!existing.exchange || existing.exchange === "NSE" || existing.exchange === "BSE") &&
+        (!existing.financials.revenue || !existing.financials.profit)
+      ) {
         await syncNseFinancials(existing);
       }
       return;
@@ -3409,6 +3450,14 @@ export default function Home() {
           fetchNseShareholding(lookupSymbol).catch(() => undefined),
           fetchNseFinancials(lookupSymbol).catch(() => undefined)
         ]);
+      } else if (item.exchange === "BSE") {
+        const lookupCode = item.bseCode || (/^\d+$/.test(item.ticker) ? item.ticker : "");
+        if (lookupCode) {
+          [fetchedShareholding, fetchedFinancials] = await Promise.all([
+            fetchBseShareholding(lookupCode).catch(() => undefined),
+            fetchBseFinancials(lookupCode).catch(() => undefined)
+          ]);
+        }
       }
     } catch {
       fetchedShareholding = undefined;
@@ -3877,7 +3926,8 @@ export default function Home() {
   function renderFundamentals() {
     const records = Object.values(data.fundamentals).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
     const shareholdingRecords = Object.values(data.shareholding).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
-    const selectedIsNse = !selected?.exchange || selected.exchange === "NSE";
+    const selectedExchange = selected?.exchange || "NSE";
+    const selectedHasExchangeSync = Boolean(selected?.ticker) && (selectedExchange !== "BSE" || Boolean(bseLookupCode(selected)));
 
     return (
       <>
@@ -3929,13 +3979,14 @@ export default function Home() {
               <span className="eyebrow">Exchange filing</span>
               <h2>Exchange Financial Results</h2>
             </div>
-            <button className="secondary" onClick={() => syncNseFinancials()} disabled={!selected?.ticker || Boolean(syncingSymbol) || !selectedIsNse}>
-              <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync NSE Financials"}
+            <button className="secondary" onClick={() => syncNseFinancials()} disabled={!selectedHasExchangeSync || Boolean(syncingSymbol)}>
+              <Download size={17} /> {syncingSymbol ? "Syncing" : `Sync ${selectedExchange} Financials`}
             </button>
           </div>
           <div className="info">
-            Sync annual financial-result filings for NSE records and fill revenue, profit, EPS, sales growth, profit
-            growth and operating margin where available. For BSE-only records, use market-intelligence sync or upload fallback.
+            Sync exchange filings for the selected company. NSE records can fill annual sales, profit, EPS and margin
+            fields where available. BSE records fill latest price, P/E, EPS, ROE, operating margin and the annual result
+            archive link where available.
           </div>
           <div className="note">Use this as evidence collection only. The final interpretation happens in the stock report.</div>
         </section>
@@ -3982,7 +4033,7 @@ export default function Home() {
               <h2>Shareholding pattern</h2>
             </div>
             <div className="top-actions">
-              <button className="secondary" onClick={() => syncNseShareholding()} disabled={!selected?.ticker || Boolean(syncingSymbol) || !selectedIsNse}>
+              <button className="secondary" onClick={() => syncNseShareholding()} disabled={!selectedHasExchangeSync || Boolean(syncingSymbol)}>
                 <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync latest"}
               </button>
               <label className="file-button">
@@ -3992,8 +4043,8 @@ export default function Home() {
             </div>
           </div>
           <div className="info">
-            IMRS syncs promoter holding directly for NSE records when possible. Use Sync latest to refresh an NSE
-            company, or upload a CSV only as a fallback.
+            IMRS syncs promoter holding directly for NSE and BSE records when possible. Use Sync latest to refresh the
+            selected company, or upload a CSV only as a fallback.
           </div>
           <div className="note">This fills the Promoter holding % field from the latest available exchange filing.</div>
         </section>
@@ -4088,7 +4139,7 @@ export default function Home() {
                 ))}
               </tbody>
             </table>
-            {shareholdingRecords.length === 0 ? <p>No NSE shareholding CSV files imported yet.</p> : null}
+            {shareholdingRecords.length === 0 ? <p>No exchange shareholding records imported yet.</p> : null}
           </div>
         </section>
       </>

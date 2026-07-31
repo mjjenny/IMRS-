@@ -77,21 +77,33 @@ This is the preferred source for promoter holding because it comes from the exch
 
 IMRS search covers both NSE symbols and BSE active equity securities. Imported companies retain exchange identity, BSE code and ISIN where available.
 
-IMRS automatically attempts to sync annual financial-result filings when an NSE company is imported from search. It uses:
+IMRS automatically attempts to sync exchange filing data when an NSE or BSE company is imported from search. NSE records use:
 
 ```text
 /api/nse/financials
 ```
 
-The current importer fills:
+BSE records use:
+
+```text
+/api/bse/financials
+```
+
+For NSE records, the current importer fills:
 
 ```text
 Revenue, profit, EPS, sales growth, profit growth, operating margin, report date
 ```
 
-BSE-only companies can still be imported and used for packet/report generation, but direct filing sync currently remains NSE-first. For BSE-only records, use market-intelligence sync or upload fallback until a dedicated BSE filing endpoint is added.
+For BSE records, the current importer fills:
 
-It does not yet fill ROE, ROCE, debt/equity or operating cash flow because those require balance-sheet and cash-flow statement detail.
+```text
+Latest price, P/E, EPS, ROE, operating margin and latest annual result archive link where available
+```
+
+BSE revenue and PAT extraction is not yet parsed from the linked result archives because those filings are commonly delivered as PDF or ZIP attachments. Use market-intelligence sync or workbook upload for full line-item financials until the BSE archive parser is expanded.
+
+The exchange routes do not yet fill every balance-sheet and cash-flow field. ROCE, debt/equity, operating cash flow and richer ownership splits should still come from the market-intelligence connector or licensed workbook exports when available.
 
 ## Trendlyne Rich Fundamentals
 
