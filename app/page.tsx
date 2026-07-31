@@ -2640,8 +2640,25 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
   };
 }
 
-function asNumber(value: string) {
-  return Number(value) || 0;
+function asNumber(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return 0;
+  const parsed = Number(String(value).replace(/,/g, "").trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hasUsablePercent(value: string | number | null | undefined) {
+  const parsed = asNumber(value);
+  return parsed > 0 && parsed <= 100;
+}
+
+function hasUsableMarketPrice(value: string | number | null | undefined) {
+  const parsed = asNumber(value);
+  return parsed > 1 && parsed < 1000000;
+}
+
+function hasUsableMarketCap(value: string | number | null | undefined) {
+  const parsed = asNumber(value);
+  return parsed > 0;
 }
 
 function normalizeKey(value: string) {
@@ -3278,14 +3295,16 @@ export default function Home() {
 
   function applyFundamentals(company: Company, record?: FundamentalsRecord) {
     if (!record) return company;
-    const priceForPe = asNumber(record.currentPrice) || asNumber(company.financials.currentPrice);
+    const recordPrice = hasUsableMarketPrice(record.currentPrice) ? record.currentPrice : "";
+    const recordMarketCap = hasUsableMarketCap(record.marketCap) ? record.marketCap : "";
+    const priceForPe = asNumber(recordPrice) || asNumber(company.financials.currentPrice);
     const eps = asNumber(record.eps);
     const recordPe = asNumber(record.pe);
     const impliedEps = !eps && priceForPe && recordPe ? formatNumber(priceForPe / recordPe) : "";
 
     return {
       ...company,
-      marketCap: record.marketCap || company.marketCap,
+      marketCap: recordMarketCap || company.marketCap,
       dataSource: `${company.dataSource || "Company search"} + ${record.source} (${record.reportDate || record.importedAt.slice(0, 10)})`,
       financials: {
         ...company.financials,
@@ -3296,15 +3315,17 @@ export default function Home() {
         roe: record.roe || company.financials.roe,
         roce: record.roce || company.financials.roce,
         debtEquity: record.debtEquity || company.financials.debtEquity,
-        promoterHolding: record.promoterHolding || company.financials.promoterHolding,
-        fiiHolding: record.fiiHolding || company.financials.fiiHolding,
-        diiHolding: record.diiHolding || company.financials.diiHolding,
-        institutionalHolding: record.institutionalHolding || company.financials.institutionalHolding,
+        promoterHolding: hasUsablePercent(record.promoterHolding) ? record.promoterHolding : company.financials.promoterHolding,
+        fiiHolding: hasUsablePercent(record.fiiHolding) ? record.fiiHolding : company.financials.fiiHolding,
+        diiHolding: hasUsablePercent(record.diiHolding) ? record.diiHolding : company.financials.diiHolding,
+        institutionalHolding: hasUsablePercent(record.institutionalHolding)
+          ? record.institutionalHolding
+          : company.financials.institutionalHolding,
         salesGrowth: record.salesGrowth || company.financials.salesGrowth,
         profitGrowth: record.profitGrowth || company.financials.profitGrowth,
         opm: record.opm || company.financials.opm,
         cfo: record.cfo || company.financials.cfo,
-        currentPrice: record.currentPrice || company.financials.currentPrice,
+        currentPrice: recordPrice || company.financials.currentPrice,
         dvmDurability: record.dvmDurability || company.financials.dvmDurability,
         dvmValuation: record.dvmValuation || company.financials.dvmValuation,
         dvmMomentum: record.dvmMomentum || company.financials.dvmMomentum,
@@ -3315,13 +3336,14 @@ export default function Home() {
 
   function applyShareholding(company: Company, record?: ShareholdingRecord) {
     if (!record) return company;
+    const promoterHolding = hasUsablePercent(record.promoterHolding) ? record.promoterHolding : "";
 
     return {
       ...company,
       dataSource: `${company.dataSource || "Company search"} + ${record.source} (${record.asOnDate || record.importedAt.slice(0, 10)})`,
       financials: {
         ...company.financials,
-        promoterHolding: record.promoterHolding || company.financials.promoterHolding
+        promoterHolding: promoterHolding || company.financials.promoterHolding
       }
     };
   }

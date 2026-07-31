@@ -41,6 +41,13 @@ function formatNumber(value: string | number | null | undefined, decimals = 2) {
   return numberValue.toFixed(decimals).replace(/\.?0+$/, "");
 }
 
+function formatMarketPrice(value: string | number | null | undefined) {
+  const formatted = formatNumber(value);
+  const parsed = Number(formatted);
+  if (!Number.isFinite(parsed) || parsed <= 1) return "";
+  return formatted;
+}
+
 function absoluteBseUrl(value = "") {
   if (!value) return "";
   if (/^https?:\/\//i.test(value)) return value;
@@ -146,7 +153,7 @@ export async function GET(request: Request) {
         profitGrowth: "",
         opm: mergeMetric(formatNumber(header.OPM), metrics.opm),
         cfo: mergeMetric("", metrics.cfo, 0),
-        currentPrice: formatNumber(price.CurrVal),
+        currentPrice: formatMarketPrice(price.CurrVal),
         fiiHolding: "",
         diiHolding: "",
         institutionalHolding: "",

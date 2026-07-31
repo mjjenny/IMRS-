@@ -25,6 +25,20 @@ function cookieHeader(response: Response) {
     .join("; ");
 }
 
+function cleanPercent(value: string | null | undefined) {
+  const cleaned = String(value || "").replace(/,/g, "").trim();
+  if (!cleaned) return "";
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed)) return "";
+  return parsed.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function positivePercent(value: string | null | undefined) {
+  const formatted = cleanPercent(value);
+  const parsed = Number(formatted);
+  return parsed > 0 && parsed <= 100 ? formatted : "";
+}
+
 function normalizeRecord(rows: NseShareholdingRow[], symbol: string) {
   const latest = rows[0];
   if (!latest) return null;
@@ -37,15 +51,15 @@ function normalizeRecord(rows: NseShareholdingRow[], symbol: string) {
     importedAt: new Date().toISOString(),
     asOnDate: latest.date || "",
     submissionDate: latest.submissionDate || "",
-    promoterHolding: latest.pr_and_prgrp || "",
-    publicHolding: latest.public_val || "",
-    employeeTrusts: latest.employeeTrusts || "",
+    promoterHolding: positivePercent(latest.pr_and_prgrp),
+    publicHolding: cleanPercent(latest.public_val),
+    employeeTrusts: cleanPercent(latest.employeeTrusts),
     xbrlUrl: latest.xbrl || "",
     history: rows.map((row) => ({
       asOnDate: row.date || "",
-      promoterHolding: row.pr_and_prgrp || "",
-      publicHolding: row.public_val || "",
-      employeeTrusts: row.employeeTrusts || "",
+      promoterHolding: positivePercent(row.pr_and_prgrp),
+      publicHolding: cleanPercent(row.public_val),
+      employeeTrusts: cleanPercent(row.employeeTrusts),
       submissionDate: row.submissionDate || "",
       xbrlUrl: row.xbrl || ""
     }))

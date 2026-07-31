@@ -36,9 +36,17 @@ function clean(value: string | number | null | undefined) {
 }
 
 function formatPercent(value: string | number | null | undefined) {
-  const numberValue = Number(clean(value).replace(/,/g, ""));
+  const cleaned = clean(value).replace(/,/g, "");
+  if (!cleaned) return "";
+  const numberValue = Number(cleaned);
   if (!Number.isFinite(numberValue)) return "";
   return numberValue.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function formatPositivePercent(value: string | number | null | undefined) {
+  const formatted = formatPercent(value);
+  const numberValue = Number(formatted);
+  return numberValue > 0 && numberValue <= 100 ? formatted : "";
 }
 
 function absoluteBseUrl(value = "") {
@@ -117,13 +125,13 @@ export async function GET(request: Request) {
         importedAt: new Date().toISOString(),
         asOnDate,
         submissionDate: clean(latest?.filing_date_time || latest?.revised_date_time),
-        promoterHolding: formatPercent(promoter?.Fld_TotalPercentageOf_A_B_C2),
+        promoterHolding: formatPositivePercent(promoter?.Fld_TotalPercentageOf_A_B_C2),
         publicHolding: formatPercent(publicRow?.Fld_TotalPercentageOf_A_B_C2),
         employeeTrusts: formatPercent(employeeTrusts?.Fld_TotalPercentageOf_A_B_C2),
         xbrlUrl: absoluteBseUrl(latest?.xbrlurl || latest?.XbrlFile || ""),
         history: historyRows.slice(0, 8).map((row, index) => ({
           asOnDate: clean(row.qtr),
-          promoterHolding: index === 0 ? formatPercent(promoter?.Fld_TotalPercentageOf_A_B_C2) : "",
+          promoterHolding: index === 0 ? formatPositivePercent(promoter?.Fld_TotalPercentageOf_A_B_C2) : "",
           publicHolding: index === 0 ? formatPercent(publicRow?.Fld_TotalPercentageOf_A_B_C2) : "",
           employeeTrusts: index === 0 ? formatPercent(employeeTrusts?.Fld_TotalPercentageOf_A_B_C2) : "",
           submissionDate: clean(row.filing_date_time || row.revised_date_time),
