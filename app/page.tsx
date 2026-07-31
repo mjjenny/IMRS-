@@ -2574,7 +2574,12 @@ function externalLookupTicker(value: string) {
 
 function generatedReportUrls(ticker: string) {
   const lookupSymbol = externalLookupTicker(ticker);
-  return Array.from(new Set([lookupSymbol, ticker.toUpperCase()]))
+  return Array.from(new Set([
+    lookupSymbol,
+    ticker.toUpperCase(),
+    safeFileName(lookupSymbol),
+    safeFileName(ticker.toUpperCase())
+  ]))
     .filter(Boolean)
     .map((symbol) => `/reports/${encodeURIComponent(symbol)}.json`);
 }
