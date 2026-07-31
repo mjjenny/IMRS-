@@ -2929,6 +2929,7 @@ export default function Home() {
   const [trendlyneLoading, setTrendlyneLoading] = useState(false);
   const [syncingSymbol, setSyncingSymbol] = useState("");
   const [reportFetching, setReportFetching] = useState(false);
+  const [packetBridgeMessage, setPacketBridgeMessage] = useState("");
 
   useEffect(() => {
     try {
@@ -3389,17 +3390,32 @@ export default function Home() {
     }
   }
 
+  async function sendPacketToCodexBridge(filename: string, packet: unknown) {
+    try {
+      const response = await fetch("http://127.0.0.1:43117/packet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, packet })
+      });
+      const payload = (await response.json()) as { ok?: boolean; latestPath?: string; error?: string };
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Local Codex bridge did not accept the packet.");
+      setPacketBridgeMessage(`Auto-staged for Codex: ${payload.latestPath}`);
+    } catch {
+      setPacketBridgeMessage("Downloaded. Auto-stage is off; run npm run packet:bridge to enable one-click Codex staging.");
+    }
+  }
+
   function exportCodexResearchPacket() {
     if (!selected) return;
     const fundamentalsRecord = findFundamentals(selected.ticker, selected.name);
     const shareholdingRecord = findShareholding(selected.ticker, selected.name);
     const trendlyneIntel = findTrendlyneIntelligence(selected.ticker, selected.name);
     const packet = buildCleanCodexResearchPacket(selected, fundamentalsRecord, shareholdingRecord, trendlyneIntel);
+    const filename = `${safeFileName(selected.ticker || selected.name)}-IMRS-Codex-Research-Packet-${new Date().toISOString().slice(0, 10)}.json`;
 
-    downloadJson(
-      `${safeFileName(selected.ticker || selected.name)}-IMRS-Codex-Research-Packet-${new Date().toISOString().slice(0, 10)}.json`,
-      packet
-    );
+    downloadJson(filename, packet);
+    setPacketBridgeMessage("Packet downloaded. Checking local Codex bridge...");
+    void sendPacketToCodexBridge(filename, packet);
   }
 
   function reportContentFromPayload(text: string, fallbackTitle: string) {
@@ -4124,6 +4140,7 @@ export default function Home() {
                 <FileDown size={17} /> Export PDF
               </button>
             </div>
+            {packetBridgeMessage ? <div className="info">{packetBridgeMessage}</div> : null}
           </section>
 
           <div className="stats compact-stats report-stats">
@@ -4142,7 +4159,7 @@ export default function Home() {
             <article className="panel">
               <span className="eyebrow">Step 2</span>
               <h3>Export packet</h3>
-              <p>The packet carries cleaned, analyst-ready evidence to Codex for dynamic, case-by-case research.</p>
+              <p>With the local bridge running, export also stages the packet for Codex automatically.</p>
             </article>
             <article className="panel">
               <span className="eyebrow">Step 3</span>

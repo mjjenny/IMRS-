@@ -176,6 +176,26 @@ Then tell Codex:
 Use the staged packet at tmp/codex-inbox/latest-packet.json and publish the final stock-only IMRS report.
 ```
 
+For a smoother workflow, start the local Codex packet bridge before working:
+
+```bash
+npm run packet:bridge
+```
+
+Leave that terminal window open. After that, when you click **Report > Export Rich Packet** in the browser, IMRS still downloads the packet but also sends a copy directly into:
+
+```text
+tmp/codex-inbox/latest-packet.json
+```
+
+The browser will show whether auto-staging worked. If it worked, tell Codex:
+
+```text
+Use the latest staged packet and publish the report.
+```
+
+If the bridge is not running, the normal download still works and `npm run packet:stage` remains the fallback.
+
 The final report should discuss only the stock. It should not expose provider names, raw payloads, reconciliation notes, app errors or data-pipeline details to the reader.
 
 The exported packet is intentionally different from a normal app backup. It contains cleaned, analyst-ready sections: company profile, validated financial metrics with units and periods, ownership evidence, market and event evidence, saved research notes, risk/catalyst trackers, scorecard, valuation sanity checks and a report brief for Codex. Raw table dumps are suppressed from the primary packet so the final report starts from readable evidence instead of connector output.
