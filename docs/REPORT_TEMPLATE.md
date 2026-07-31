@@ -10,6 +10,9 @@ This is the formal template for every final IMRS research report. The benchmark 
 4. The verdict is calibrated, never absolute. Use ranges and conditions ("watchlist / accumulate only with valuation discipline"), not "buy now" or "guaranteed multibagger". Never output 0/100 or 100/100 probabilities.
 5. Both directions are always argued. Every bull pillar has a bear counterpart; a trap analysis is mandatory even for stocks the analyst likes.
 6. The mechanical numbers in the packet's `legacyAppHeuristics` block are app-generated heuristics, not evidence. Ignore them when forming conclusions.
+7. Critical financial and ownership metrics must be backed by the packet's `criticalMetrics` provenance block. If a critical metric has no unit, period, source, or confidence, do not use it in the primary financial table.
+8. Segment analysis is mandatory whenever the packet's `segmentAnalysis.required` is true. Do not assign business quality or valuation confidence until segment economics are discussed.
+9. The final score must be explained through the packet's `scoringRationale`; opaque scores are not acceptable.
 
 ## Report header
 
@@ -66,6 +69,32 @@ Publish each report as `public/reports/<TICKER>.json` (UTF-8; a BOM is tolerated
   "asOfDate": "<YYYY-MM-DD>",
   "reportType": "stock-only-final-report",
   "format": "markdown",
+  "criticalMetrics": {
+    "revenue": {
+      "key": "revenue",
+      "label": "Revenue",
+      "value": "<number as string>",
+      "unit": "INR crore",
+      "period": "<FY/TTM/Quarter/As-of date>",
+      "periodType": "FY",
+      "asOf": "<YYYY-MM-DD or source period>",
+      "source": "nse",
+      "confidence": "verified",
+      "notes": []
+    }
+  },
+  "segmentAnalysis": {
+    "required": true,
+    "status": "partial",
+    "knownSegments": [],
+    "codexMustAnalyze": []
+  },
+  "scoringRationale": {
+    "convictionScoreBasis": [],
+    "multibaggerScoreBasis": [],
+    "trapRiskBasis": [],
+    "scorecardRationale": []
+  },
   "report": "<the full markdown report>"
 }
 ```

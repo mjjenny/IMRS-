@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { normalizeTrendlyneToProvenance, type CriticalMetrics } from "../../../lib/provenance";
 import { connectTrendlyneMcp, TrendlyneMcpClient } from "../mcp";
 
 export const runtime = "nodejs";
@@ -31,6 +32,7 @@ type TrendlyneRecord = {
   dvmValuation: string;
   dvmMomentum: string;
   analystScore: string;
+  provenance?: CriticalMetrics;
 };
 
 type SearchEntity = {
@@ -42,7 +44,7 @@ type SearchEntity = {
   industry?: string | null;
 };
 
-const fieldAliases: Record<keyof Omit<TrendlyneRecord, "id" | "source" | "importedAt" | "reportDate">, string[]> = {
+const fieldAliases: Record<keyof Omit<TrendlyneRecord, "id" | "source" | "importedAt" | "reportDate" | "provenance">, string[]> = {
   companyName: ["company name", "stock name", "name"],
   ticker: ["nse code", "nse symbol", "symbol", "ticker"],
   marketCap: ["market cap", "market capitalization", "mcap"],
@@ -384,6 +386,8 @@ export async function GET(request: NextRequest) {
       dvmMomentum: identity.momentum || metricValue(metrics, "dvmMomentum"),
       analystScore: metricValue(metrics, "analystScore")
     };
+    const flatRecord = Object.fromEntries(Object.entries(record).filter(([key]) => key !== "provenance")) as Record<string, string>;
+    record.provenance = normalizeTrendlyneToProvenance(flatRecord);
 
     return NextResponse.json({
       record,

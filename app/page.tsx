@@ -12,6 +12,12 @@ import {
 } from "lucide-react";
 import { strFromU8, unzipSync } from "fflate";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import {
+  buildCriticalMetrics,
+  buildScoringRationalePacket,
+  buildSegmentAnalysisPacket,
+  type MetricSource
+} from "./lib/provenance";
 
 const STORAGE_KEY = "imrs_enterprise_v2";
 
@@ -2189,6 +2195,29 @@ function buildReportBriefForPacket(company: Company, record?: FundamentalsRecord
   };
 }
 
+function provenanceSource(record?: FundamentalsRecord): MetricSource {
+  const source = (record?.source || "").toLowerCase();
+  if (source.includes("trendlyne")) return "trendlyne";
+  if (source.includes("nse")) return "nse";
+  if (source.includes("bse")) return "bse";
+  if (source.includes("kite")) return "kite";
+  return record ? "manual" : "app";
+}
+
+function buildProvenanceInput(company: Company, record?: FundamentalsRecord, shareholding?: ShareholdingRecord) {
+  return {
+    ...company.financials,
+    ...(record || {}),
+    marketCap: record?.marketCap || company.marketCap,
+    promoterHolding: shareholding?.promoterHolding || record?.promoterHolding || company.financials.promoterHolding,
+    fiiHolding: record?.fiiHolding || company.financials.fiiHolding,
+    diiHolding: record?.diiHolding || company.financials.diiHolding,
+    institutionalHolding: record?.institutionalHolding || company.financials.institutionalHolding,
+    reportDate: record?.reportDate || shareholding?.asOnDate || "",
+    importedAt: record?.importedAt || shareholding?.importedAt || new Date().toISOString()
+  };
+}
+
 function buildCleanCodexResearchPacket(
   company: Company,
   fundamentalsRecord?: FundamentalsRecord,
@@ -2199,10 +2228,11 @@ function buildCleanCodexResearchPacket(
   const review = dataQualityReview(company, fundamentalsRecord, trendlyneIntel);
   const cleanIntelligence = buildIntelligenceDigest(trendlyneIntel);
   const eventEvidence = buildEventEvidenceForPacket(trendlyneIntel);
+  const provenanceInput = buildProvenanceInput(company, fundamentalsRecord, shareholdingRecord);
 
   return {
     packetType: "IMRS_CODEX_RESEARCH_PACKET",
-    version: "2.2",
+    version: "2.3",
     generatedAt,
     purpose:
       "Provide a clean, analyst-ready evidence packet for Codex to create an institutional-grade, stock-only research report.",
@@ -2263,6 +2293,21 @@ function buildCleanCodexResearchPacket(
       codexMustVerify: buildCodexVerificationChecklist(company, fundamentalsRecord, shareholdingRecord, trendlyneIntel),
       priceMarketCapSanity: buildPriceMarketCapSanity(company, fundamentalsRecord),
       filingVerification: buildFilingVerificationChecklist(company, fundamentalsRecord, shareholdingRecord, trendlyneIntel)
+    },
+    criticalMetrics: buildCriticalMetrics(provenanceInput, provenanceSource(fundamentalsRecord), provenanceInput.importedAt),
+    segmentAnalysis: buildSegmentAnalysisPacket({
+      companyName: company.name,
+      sector: inferredSector(company, fundamentalsRecord),
+      businessSummary: company.businessSummary,
+      industryOpportunity: company.industryOpportunity
+    }),
+    scoringRationale: buildScoringRationalePacket(company.scores, provenanceInput),
+    reportQualityRules: {
+      requireCriticalMetricProvenance: true,
+      requireSegmentAnalysis: true,
+      requireScoringRationale: true,
+      suppressUnprovenMetricsFromPrimaryTables: true,
+      stockOnlyReaderFacingOutput: true
     },
     financialMetrics: buildMetricsForPacket(company, fundamentalsRecord),
     financialTables: buildFinancialTablesForPacket(company, fundamentalsRecord),

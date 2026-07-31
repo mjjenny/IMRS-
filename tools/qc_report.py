@@ -85,6 +85,25 @@ PERIOD_PATTERN = re.compile(
   r"(?i)\b(FY\d{2}|FY20\d{2}|Q[1-4]\s*FY\d{2}|Q[1-4]\s*FY20\d{2}|TTM|trailing|annualised|annualized|as of|report date|reference price|latest|current|prior|quarter|year|around|about|near|approximately|approximate|unverified)\b"
 )
 
+CRITICAL_METRIC_KEYS = [
+  "revenue",
+  "netProfit",
+  "eps",
+  "pe",
+  "roe",
+  "roce",
+  "debtEquity",
+  "promoterHolding",
+  "salesGrowth",
+  "profitGrowth",
+  "opm",
+  "operatingCashFlow",
+  "currentPrice",
+  "marketCap",
+]
+
+PROVENANCE_FIELDS = ["value", "unit", "period", "periodType", "asOf", "source", "confidence"]
+
 
 @dataclass
 class CheckResult:
@@ -259,7 +278,46 @@ def check_period_labelling(markdown: str, warnings: list[str]) -> None:
       warnings.append(f"Possible floating financial figure on line {index}: {stripped[:140]}")
 
 
-def run_checks(path: Path) -> CheckResult:
+def check_provenance(payload: dict[str, object], errors: list[str], warnings: list[str], require_provenance: bool) -> None:
+  report_quality = payload.get("reportQualityRules")
+  declares_requirement = isinstance(report_quality, dict) and bool(report_quality.get("requireCriticalMetricProvenance"))
+  must_check = require_provenance or declares_requirement
+  metrics = payload.get("criticalMetrics")
+
+  if not isinstance(metrics, dict):
+    message = "Missing criticalMetrics provenance block."
+    if must_check:
+      errors.append(message)
+    else:
+      warnings.append(message)
+    return
+
+  for key in CRITICAL_METRIC_KEYS:
+    metric = metrics.get(key)
+    if not isinstance(metric, dict):
+      errors.append(f"Missing provenance for critical metric: {key}")
+      continue
+
+    for field in PROVENANCE_FIELDS:
+      if field not in metric:
+        errors.append(f"Metric '{key}' is missing provenance field: {field}")
+
+    confidence = str(metric.get("confidence") or "").strip().lower()
+    unit = str(metric.get("unit") or "").strip()
+    source = str(metric.get("source") or "").strip()
+    period = str(metric.get("period") or metric.get("asOf") or "").strip()
+
+    if not unit:
+      errors.append(f"Metric '{key}' has no unit.")
+    if not source:
+      errors.append(f"Metric '{key}' has no source.")
+    if confidence in {"", "missing"}:
+      warnings.append(f"Metric '{key}' has missing/low provenance confidence.")
+    if key not in {"currentPrice", "marketCap", "pe"} and not period:
+      warnings.append(f"Metric '{key}' has no period/as-of date; keep it out of primary report tables.")
+
+
+def run_checks(path: Path, require_provenance: bool = False) -> CheckResult:
   errors: list[str] = []
   warnings: list[str] = []
 
@@ -275,6 +333,7 @@ def run_checks(path: Path) -> CheckResult:
   check_scores(markdown, errors, warnings)
   check_valuation(markdown, errors, warnings)
   check_period_labelling(markdown, warnings)
+  check_provenance(payload, errors, warnings, require_provenance)
 
   return CheckResult(errors=errors, warnings=warnings)
 
@@ -295,9 +354,10 @@ def main() -> int:
   parser = argparse.ArgumentParser(description="Validate an IMRS final report JSON before publishing.")
   parser.add_argument("report", type=Path, help="Path to public/reports/TICKER.json")
   parser.add_argument("--strict", action="store_true", help="Return a failing exit code when errors are found.")
+  parser.add_argument("--require-provenance", action="store_true", help="Fail reports that do not include criticalMetrics provenance.")
   args = parser.parse_args()
 
-  result = run_checks(args.report)
+  result = run_checks(args.report, require_provenance=args.require_provenance)
   print_result(args.report, result)
   if args.strict and not result.passed:
     return 1
