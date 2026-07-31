@@ -6,6 +6,9 @@ type SearchResult = {
   name: string;
   ticker: string;
   exchange: string;
+  bseCode: string;
+  isin: string;
+  listedSeries: string;
   sector: string;
   marketCap: string;
   currentPrice: string;
@@ -52,6 +55,9 @@ const starterNotes: Record<string, { sector: string; note: string }> = {
 
 function blankResult(): Omit<SearchResult, "name" | "ticker" | "exchange" | "sector" | "note" | "source"> {
   return {
+    bseCode: "",
+    isin: "",
+    listedSeries: "",
     marketCap: "",
     currentPrice: "",
     pe: "",
@@ -78,6 +84,9 @@ function starterCompanies(): SearchResult[] {
     name,
     ticker,
     exchange: "NSE",
+    bseCode: "",
+    isin: "",
+    listedSeries: "EQ",
     sector: starterNotes[ticker]?.sector || "",
     note: starterNotes[ticker]?.note || "",
     source: "IMRS starter directory"
@@ -257,6 +266,9 @@ function toResult(row: UniverseRow): SearchResult {
     name: row.name,
     ticker: row.symbol,
     exchange: row.exchange,
+    bseCode: row.bseCode || "",
+    isin: row.isin || "",
+    listedSeries: row.series || "",
     sector: curated?.sector || "",
     marketCap: row.marketCap || "",
     note:

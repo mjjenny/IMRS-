@@ -73,9 +73,11 @@ Promoter holding %, public holding %, employee trust holding %, as-on date, subm
 
 This is the preferred source for promoter holding because it comes from the exchange filing rather than the Screener workbook.
 
-## NSE Financial Results
+## Company Search And Exchange Results
 
-IMRS automatically attempts to sync annual NSE financial-result filings when an NSE company is imported from search. It uses:
+IMRS search covers both NSE symbols and BSE active equity securities. Imported companies retain exchange identity, BSE code and ISIN where available.
+
+IMRS automatically attempts to sync annual financial-result filings when an NSE company is imported from search. It uses:
 
 ```text
 /api/nse/financials
@@ -86,6 +88,8 @@ The current importer fills:
 ```text
 Revenue, profit, EPS, sales growth, profit growth, operating margin, report date
 ```
+
+BSE-only companies can still be imported and used for packet/report generation, but direct filing sync currently remains NSE-first. For BSE-only records, use market-intelligence sync or upload fallback until a dedicated BSE filing endpoint is added.
 
 It does not yet fill ROE, ROCE, debt/equity or operating cash flow because those require balance-sheet and cash-flow statement detail.
 
@@ -138,7 +142,7 @@ The full intelligence route is:
 /api/trendlyne/intelligence?symbol=RELIANCE
 ```
 
-This calls Trendlyne's overview, technical, news, corporate events, shareholding, SAST/insider, bulk/block deal and document-search tools. The app stores the returned intelligence pack under the selected company's AI Analysis tab.
+This calls Trendlyne's overview, technical, news, corporate events, shareholding, SAST/insider, bulk/block deal and document-search tools. The app stores the returned intelligence pack in the selected company's evidence record for packet export.
 
 ## Codex Final Reports
 
@@ -170,6 +174,15 @@ This copies the latest exported packet into:
 tmp/codex-inbox/latest-packet.json
 ```
 
+It also writes the current prompt and machine-readable handoff signal:
+
+```text
+tmp/codex-inbox/latest-prompt.txt
+tmp/codex-inbox/latest-signal.json
+```
+
+The signal file records the ticker, staged packet path and expected final report path, so Codex/Claude can process the newest packet without re-reading the browser download manually.
+
 Then tell Codex:
 
 ```text
@@ -187,6 +200,8 @@ Leave that terminal window open. After that, when you click **Report > Export Ri
 ```text
 tmp/codex-inbox/latest-packet.json
 ```
+
+The bridge writes the same `latest-prompt.txt` and `latest-signal.json` files as the fallback staging script. This keeps the one-click browser export and the manual fallback on the same Codex inbox workflow.
 
 The browser will show whether auto-staging worked. If it worked, tell Codex:
 

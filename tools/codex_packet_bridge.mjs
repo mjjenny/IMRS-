@@ -78,17 +78,30 @@ const server = createServer((request, response) => {
       const filePath = join(inbox, fileName);
       const latestPath = join(inbox, "latest-packet.json");
       const promptPath = join(inbox, "latest-prompt.txt");
+      const signalPath = join(inbox, "latest-signal.json");
       const text = `${JSON.stringify(packet, null, 2)}\n`;
+      const prompt = `Use the staged packet at ${latestPath} and publish the final stock-only IMRS report.`;
+      const signal = {
+        status: "ready_for_codex",
+        ticker,
+        receivedAt: new Date().toISOString(),
+        packetPath: filePath,
+        latestPath,
+        prompt,
+        expectedReportPath: packet.codexWorkflow?.finalReportTarget || `public/reports/${ticker}.json`
+      };
 
       writeFileSync(filePath, text, "utf8");
       writeFileSync(latestPath, text, "utf8");
-      writeFileSync(promptPath, `Use the staged packet at ${latestPath} and publish the final stock-only IMRS report.\n`, "utf8");
+      writeFileSync(promptPath, `${prompt}\n`, "utf8");
+      writeFileSync(signalPath, `${JSON.stringify(signal, null, 2)}\n`, "utf8");
 
       sendJson(request, response, 200, {
         ok: true,
         filePath,
         latestPath,
-        prompt: `Use the staged packet at ${latestPath} and publish the final stock-only IMRS report.`
+        signalPath,
+        prompt
       });
     } catch (error) {
       sendJson(request, response, 500, { ok: false, error: error instanceof Error ? error.message : "Could not stage packet." });

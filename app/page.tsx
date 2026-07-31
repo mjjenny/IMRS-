@@ -77,6 +77,10 @@ type Company = {
   id: string;
   name: string;
   ticker: string;
+  exchange: string;
+  bseCode: string;
+  isin: string;
+  listedSeries: string;
   sector: string;
   marketCap: string;
   status: string;
@@ -219,6 +223,9 @@ type CompanySearchResult = {
   name: string;
   ticker: string;
   exchange: string;
+  bseCode?: string;
+  isin?: string;
+  listedSeries?: string;
   sector: string;
   marketCap: string;
   currentPrice: string;
@@ -399,6 +406,10 @@ function blankCompany(): Company {
     id: uid(),
     name: "Untitled Company",
     ticker: "",
+    exchange: "",
+    bseCode: "",
+    isin: "",
+    listedSeries: "",
     sector: "",
     marketCap: "",
     status: "Watchlist",
@@ -2191,7 +2202,7 @@ function buildCleanCodexResearchPacket(
 
   return {
     packetType: "IMRS_CODEX_RESEARCH_PACKET",
-    version: "2.1",
+    version: "2.2",
     generatedAt,
     purpose:
       "Provide a clean, analyst-ready evidence packet for Codex to create an institutional-grade, stock-only research report.",
@@ -2201,10 +2212,25 @@ function buildCleanCodexResearchPacket(
     companyProfile: {
       name: company.name,
       ticker: company.ticker,
+      exchange: company.exchange || "Unknown",
+      bseCode: company.bseCode || "",
+      isin: company.isin || "",
+      listedSeries: company.listedSeries || "",
+      preferredLookupSymbols: Array.from(
+        new Set([company.ticker, externalLookupTicker(company.ticker), company.bseCode].filter(Boolean))
+      ),
       sector: company.sector,
       marketCapInrCr: company.marketCap,
       status: company.status,
       inferredSector: inferredSector(company, fundamentalsRecord)
+    },
+    codexWorkflow: {
+      handoffMode: "local-bridge-and-monitor",
+      expectedInboxFile: "tmp/codex-inbox/latest-packet.json",
+      expectedPromptFile: "tmp/codex-inbox/latest-prompt.txt",
+      finalReportTarget: `public/reports/${safeFileName(externalLookupTicker(company.ticker) || company.ticker || company.name)}.json`,
+      publishInstruction:
+        "Generate a complete final stock-only institutional research report, run report QC/build checks, commit the JSON report and push to GitHub."
     },
     evidenceSummary: {
       sourceCoverage: sourceCoverageRows(company, fundamentalsRecord, trendlyneIntel).map(([source, status]) => ({ source, status })),
@@ -2224,6 +2250,14 @@ function buildCleanCodexResearchPacket(
           conglomerateNeedsSegments: review.conglomerateNeedsSegments
         }
       }
+    },
+    reportReadiness: {
+      hasStructuredFundamentals: Boolean(fundamentalsRecord),
+      hasOwnershipEvidence: Boolean(shareholdingRecord || company.financials.promoterHolding || company.financials.fiiHolding || company.financials.diiHolding),
+      hasMarketIntelligence: Boolean(trendlyneIntel),
+      hasSavedResearchNotes: Object.values(buildSavedNotesForPacket(company, fundamentalsRecord)).some((value) => Boolean(value)),
+      expectedCodexAction:
+        "Use available evidence to form a complete investment judgement. Do not leave reader-facing sections blank merely because one source is incomplete."
     },
     verificationPlan: {
       codexMustVerify: buildCodexVerificationChecklist(company, fundamentalsRecord, shareholdingRecord, trendlyneIntel),
@@ -2502,6 +2536,12 @@ function generatedReportUrls(ticker: string) {
 
 function tickersMatch(left: string, right: string) {
   return externalLookupTicker(left) === externalLookupTicker(right);
+}
+
+function companiesMatch(left: Pick<Company, "ticker" | "exchange" | "bseCode">, right: CompanySearchResult) {
+  if (left.bseCode && right.bseCode && left.bseCode === right.bseCode) return true;
+  if (!tickersMatch(left.ticker, right.ticker)) return false;
+  return !left.exchange || !right.exchange || left.exchange === right.exchange;
 }
 
 function formatNumber(value: number | string | null | undefined, decimals = 2) {
@@ -3190,7 +3230,11 @@ export default function Home() {
 
   async function syncNseShareholding(company = selected) {
     if (!company?.ticker) {
-      window.alert("Select a company with an NSE ticker first.");
+      window.alert("Select a company with a ticker first.");
+      return;
+    }
+    if (company.exchange && company.exchange !== "NSE") {
+      window.alert("Direct exchange filing sync is currently available for NSE records only. Use Data Hub upload or market-intelligence sync for this BSE record.");
       return;
     }
 
@@ -3219,7 +3263,11 @@ export default function Home() {
 
   async function syncNseFinancials(company = selected) {
     if (!company?.ticker) {
-      window.alert("Select a company with an NSE ticker first.");
+      window.alert("Select a company with a ticker first.");
+      return;
+    }
+    if (company.exchange && company.exchange !== "NSE") {
+      window.alert("Direct financial-result sync is currently available for NSE records only. Use Data Hub upload or market-intelligence sync for this BSE record.");
       return;
     }
 
@@ -3312,14 +3360,14 @@ export default function Home() {
   }
 
   async function importStarterCompany(item: CompanySearchResult) {
-    const existing = data.companies.find((company) => tickersMatch(company.ticker, item.ticker));
+    const existing = data.companies.find((company) => companiesMatch(company, item));
     if (existing) {
       setSelectedId(existing.id);
       setActivePage("research");
-      if (!existing.financials.promoterHolding) {
+      if ((!existing.exchange || existing.exchange === "NSE") && !existing.financials.promoterHolding) {
         await syncNseShareholding(existing);
       }
-      if (!existing.financials.revenue || !existing.financials.profit) {
+      if ((!existing.exchange || existing.exchange === "NSE") && (!existing.financials.revenue || !existing.financials.profit)) {
         await syncNseFinancials(existing);
       }
       return;
@@ -3329,6 +3377,10 @@ export default function Home() {
       ...blankCompany(),
       name: item.name,
       ticker: item.ticker,
+      exchange: item.exchange || "",
+      bseCode: item.bseCode || "",
+      isin: item.isin || "",
+      listedSeries: item.listedSeries || "",
       sector: item.sector,
       marketCap: item.marketCap,
       status: "Researching",
@@ -3437,9 +3489,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename, packet })
       });
-      const payload = (await response.json()) as { ok?: boolean; latestPath?: string; error?: string };
+      const payload = (await response.json()) as { ok?: boolean; latestPath?: string; signalPath?: string; error?: string };
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Local Codex bridge did not accept the packet.");
-      setPacketBridgeMessage(`Auto-staged for Codex: ${payload.latestPath}`);
+      setPacketBridgeMessage(`Auto-staged for Codex: ${payload.latestPath}${payload.signalPath ? `; signal ${payload.signalPath}` : ""}`);
     } catch {
       setPacketBridgeMessage("Downloaded. Auto-stage is off; run npm run packet:bridge to enable one-click Codex staging.");
     }
@@ -3801,7 +3853,10 @@ export default function Home() {
                 <div>
                   <strong>{company.name}</strong>
                   <small>
-                    {company.ticker} - {company.exchange} - {company.sector}
+                    {company.ticker} - {company.exchange}
+                    {company.bseCode ? ` - BSE ${company.bseCode}` : ""}
+                    {company.isin ? ` - ${company.isin}` : ""}
+                    {company.sector ? ` - ${company.sector}` : ""}
                   </small>
                   <small>{company.source || "Company directory"}</small>
                   <small>{company.note}</small>
@@ -3822,6 +3877,7 @@ export default function Home() {
   function renderFundamentals() {
     const records = Object.values(data.fundamentals).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
     const shareholdingRecords = Object.values(data.shareholding).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+    const selectedIsNse = !selected?.exchange || selected.exchange === "NSE";
 
     return (
       <>
@@ -3871,15 +3927,15 @@ export default function Home() {
           <div className="section-head">
             <div>
               <span className="eyebrow">Exchange filing</span>
-              <h2>NSE Financial Results</h2>
+              <h2>Exchange Financial Results</h2>
             </div>
-            <button className="secondary" onClick={() => syncNseFinancials()} disabled={!selected?.ticker || Boolean(syncingSymbol)}>
+            <button className="secondary" onClick={() => syncNseFinancials()} disabled={!selected?.ticker || Boolean(syncingSymbol) || !selectedIsNse}>
               <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync NSE Financials"}
             </button>
           </div>
           <div className="info">
-            Sync annual financial-result filings for the selected company and fill revenue, profit, EPS, sales growth,
-            profit growth and operating margin where available.
+            Sync annual financial-result filings for NSE records and fill revenue, profit, EPS, sales growth, profit
+            growth and operating margin where available. For BSE-only records, use market-intelligence sync or upload fallback.
           </div>
           <div className="note">Use this as evidence collection only. The final interpretation happens in the stock report.</div>
         </section>
@@ -3926,7 +3982,7 @@ export default function Home() {
               <h2>Shareholding pattern</h2>
             </div>
             <div className="top-actions">
-              <button className="secondary" onClick={() => syncNseShareholding()} disabled={!selected?.ticker || Boolean(syncingSymbol)}>
+              <button className="secondary" onClick={() => syncNseShareholding()} disabled={!selected?.ticker || Boolean(syncingSymbol) || !selectedIsNse}>
                 <Download size={17} /> {syncingSymbol ? "Syncing" : "Sync latest"}
               </button>
               <label className="file-button">
@@ -3936,10 +3992,10 @@ export default function Home() {
             </div>
           </div>
           <div className="info">
-            IMRS syncs promoter holding directly when a company is imported from search. Use Sync latest to refresh the
-            selected company, or upload a CSV only as a fallback.
+            IMRS syncs promoter holding directly for NSE records when possible. Use Sync latest to refresh an NSE
+            company, or upload a CSV only as a fallback.
           </div>
-          <div className="note">This fills the Promoter holding % field from the latest row in the NSE filing.</div>
+          <div className="note">This fills the Promoter holding % field from the latest available exchange filing.</div>
         </section>
         <section className="panel" style={{ marginTop: 14 }}>
           <div className="section-head">

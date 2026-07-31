@@ -31,9 +31,28 @@ if (!$latest) {
 
 $destination = Join-Path $inboxPath $latest.Name
 $latestPointer = Join-Path $inboxPath "latest-packet.json"
+$promptPath = Join-Path $inboxPath "latest-prompt.txt"
+$signalPath = Join-Path $inboxPath "latest-signal.json"
 
 Copy-Item -LiteralPath $latest.FullName -Destination $destination -Force
 Copy-Item -LiteralPath $latest.FullName -Destination $latestPointer -Force
+
+$packet = Get-Content -LiteralPath $latest.FullName -Raw | ConvertFrom-Json
+$ticker = if ($packet.companyProfile.ticker) { $packet.companyProfile.ticker } else { "IMRS" }
+$target = if ($packet.codexWorkflow.finalReportTarget) { $packet.codexWorkflow.finalReportTarget } else { "public/reports/$ticker.json" }
+$prompt = "Use the staged packet at $latestPointer and publish the final stock-only IMRS report."
+$signal = [ordered]@{
+  status = "ready_for_codex"
+  ticker = $ticker
+  receivedAt = (Get-Date).ToUniversalTime().ToString("o")
+  packetPath = $destination
+  latestPath = $latestPointer
+  prompt = $prompt
+  expectedReportPath = $target
+}
+
+Set-Content -LiteralPath $promptPath -Value $prompt -Encoding UTF8
+$signal | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $signalPath -Encoding UTF8
 
 $message = @"
 Latest IMRS packet staged for Codex.
@@ -47,14 +66,17 @@ $destination
 Stable latest path:
 $latestPointer
 
+Signal:
+$signalPath
+
 Prompt to Codex:
-Use the staged packet at $latestPointer and publish the final stock-only IMRS report.
+$prompt
 "@
 
 Write-Output $message
 
 try {
-  Set-Clipboard -Value "Use the staged packet at $latestPointer and publish the final stock-only IMRS report."
+  Set-Clipboard -Value $prompt
 } catch {
   # Clipboard access is optional.
 }
