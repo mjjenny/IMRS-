@@ -21,7 +21,7 @@ CSS = """
   size: A4;
   margin: 17mm 15mm 18mm 15mm;
   @bottom-left {
-    content: "IMRS Institutional Stock Research";
+    content: "__FOOTER_LEFT__";
     color: #6b7d75;
     font-size: 7.5pt;
     letter-spacing: 0.2pt;
@@ -79,7 +79,7 @@ body {
   align-items: center;
   display: flex;
   gap: 10pt;
-  margin-bottom: 28mm;
+  margin-bottom: 24mm;
 }
 
 .brand-mark {
@@ -140,7 +140,7 @@ body {
   display: grid;
   gap: 8pt;
   grid-template-columns: repeat(3, 1fr);
-  margin: 0 0 14pt;
+  margin: 0 0 12pt;
 }
 
 .meta-card {
@@ -164,6 +164,46 @@ body {
   font-size: 11pt;
   font-weight: 750;
   line-height: 1.25;
+}
+
+.score-grid {
+  display: grid;
+  gap: 8pt;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0 0 14pt;
+}
+
+.score-card {
+  background: #061c14;
+  border-radius: 8pt;
+  color: #ffffff;
+  min-height: 27mm;
+  padding: 9pt 10pt;
+}
+
+.score-card.trap {
+  background: #4a201d;
+}
+
+.score-label {
+  color: #9bd8c3;
+  font-size: 7.2pt;
+  font-weight: 800;
+  letter-spacing: 0.45pt;
+  margin-bottom: 5pt;
+  text-transform: uppercase;
+}
+
+.score-value {
+  font-size: 21pt;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.score-scale {
+  color: #c7dad2;
+  font-size: 8pt;
+  margin-top: 3pt;
 }
 
 .stance-card {
@@ -196,6 +236,46 @@ body {
   margin-top: 16pt;
 }
 
+.executive-summary {
+  background: #f6faf8;
+  border: 0.8pt solid #cfdfd8;
+  border-radius: 9pt;
+  break-after: page;
+  margin: 0 0 12pt;
+  padding: 12pt 14pt;
+}
+
+.summary-kicker {
+  color: #08765b;
+  font-size: 7.4pt;
+  font-weight: 850;
+  letter-spacing: 0.6pt;
+  margin-bottom: 4pt;
+  text-transform: uppercase;
+}
+
+.summary-title {
+  color: #061c14;
+  font-size: 15pt;
+  font-weight: 850;
+  line-height: 1.15;
+  margin: 0 0 8pt;
+}
+
+.summary-grid {
+  display: grid;
+  gap: 7pt;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 8pt;
+}
+
+.summary-card {
+  background: #ffffff;
+  border: 0.5pt solid #d2dfd9;
+  border-radius: 6pt;
+  padding: 7pt 8pt;
+}
+
 main {
   padding-top: 1mm;
 }
@@ -219,6 +299,10 @@ h2 {
 
 h2:nth-of-type(n+4) {
   break-before: auto;
+}
+
+h2.major-section {
+  break-before: page;
 }
 
 h2:first-child {
@@ -259,6 +343,21 @@ table {
   margin: 8pt 0 12pt;
   table-layout: fixed;
   width: 100%;
+}
+
+table.wide-table {
+  font-size: 7.6pt;
+}
+
+table.valuation-table th,
+table.valuation-table td {
+  padding: 5pt 5.2pt;
+}
+
+table.risk-table th,
+table.catalyst-table th,
+table.valuation-table th {
+  background: #06251b;
 }
 
 thead {
@@ -348,6 +447,39 @@ def inline_markdown(value: str) -> str:
   return escaped
 
 
+def css_string(value: str) -> str:
+  return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def css_for(fields: dict[str, str]) -> str:
+  ticker = fields.get("Ticker") or fields.get("ticker") or "IMRS"
+  date = report_date(fields)
+  footer = " | ".join(value for value in ["IMRS Institutional Stock Research", ticker, date] if value)
+  return CSS.replace("__FOOTER_LEFT__", css_string(footer))
+
+
+def score_number(value: str) -> str:
+  match = re.search(r"(\d+(?:\.\d+)?)\s*/\s*(?:100|10)", value)
+  if match:
+    return match.group(1)
+  match = re.search(r"\d+(?:\.\d+)?", value)
+  return match.group(0) if match else ""
+
+
+def table_class(head: list[str], max_cols: int) -> str:
+  header = " ".join(head).lower()
+  classes = []
+  if max_cols >= 5:
+    classes.append("wide-table")
+  if "scenario" in header and "probability" in header:
+    classes.append("valuation-table")
+  if "risk" in header and "monitoring" in header:
+    classes.append("risk-table")
+  if "catalyst" in header and "timing" in header:
+    classes.append("catalyst-table")
+  return f' class="{" ".join(classes)}"' if classes else ""
+
+
 def render_table(lines: list[str]) -> str:
   rows: list[list[str]] = []
   for line in lines:
@@ -364,7 +496,7 @@ def render_table(lines: list[str]) -> str:
   head = normalized[0]
   body = normalized[1:]
 
-  out = ["<table>", "<thead><tr>"]
+  out = [f"<table{table_class(head, max_cols)}>", "<thead><tr>"]
   out.extend(f"<th>{inline_markdown(cell)}</th>" for cell in head)
   out.append("</tr></thead>")
   if body:
@@ -425,7 +557,10 @@ def markdown_to_html(markdown: str) -> str:
     if line.startswith("## "):
       flush_paragraph()
       flush_lists()
-      body.append(f"<h2>{inline_markdown(line[3:].strip())}</h2>")
+      title = line[3:].strip()
+      major = re.match(r"^(9|11|15)\.\s+", title)
+      class_attr = ' class="major-section"' if major else ""
+      body.append(f"<h2{class_attr}>{inline_markdown(title)}</h2>")
       index += 1
       continue
 
@@ -464,6 +599,57 @@ def report_date(fields: dict[str, str]) -> str:
   return fields.get("Report date") or fields.get("asOfDate") or ""
 
 
+def extract_section(markdown: str, section_number: int) -> str:
+  pattern = rf"(?ms)^##\s+{section_number}\.\s+.*?\n(.*?)(?=^##\s+\d+\.|\Z)"
+  match = re.search(pattern, markdown)
+  return match.group(1).strip() if match else ""
+
+
+def paragraph_snippets(section: str, limit: int = 3) -> list[str]:
+  snippets: list[str] = []
+  for block in re.split(r"\n\s*\n", section):
+    clean = re.sub(r"^#+\s+", "", block.strip())
+    clean = re.sub(r"^\s*[-*]\s+", "", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    if clean and not clean.startswith("|") and len(clean) > 40:
+      snippets.append(clean)
+    if len(snippets) >= limit:
+      break
+  return snippets
+
+
+def executive_summary_html(markdown: str, fields: dict[str, str]) -> str:
+  snippets = paragraph_snippets(extract_section(markdown, 1), 3)
+  if not snippets:
+    return ""
+
+  cards = [
+    ("Stance", fields.get("Investment stance", "")),
+    ("Conviction", fields.get("Conviction score", "")),
+    ("Risk lens", fields.get("Potential trap risk", "")),
+  ]
+  card_html = "\n".join(
+    f"""
+    <div class="summary-card">
+      <div class="meta-label">{html.escape(label)}</div>
+      <div class="meta-value">{inline_markdown(value)}</div>
+    </div>
+    """
+    for label, value in cards
+    if value
+  )
+
+  body = "\n".join(f"<p>{inline_markdown(item)}</p>" for item in snippets)
+  return f"""
+  <section class="executive-summary">
+    <div class="summary-kicker">One-page committee brief</div>
+    <div class="summary-title">Executive Summary</div>
+    {body}
+    <div class="summary-grid">{card_html}</div>
+  </section>
+  """
+
+
 def cover_html(title: str, fields: dict[str, str]) -> str:
   company = fields.get("Company") or fields.get("companyName") or title
   ticker = fields.get("Ticker") or fields.get("ticker") or ""
@@ -479,8 +665,6 @@ def cover_html(title: str, fields: dict[str, str]) -> str:
     ("Ticker", ticker),
     ("Report date", date),
     ("Research posture", posture),
-    ("Conviction", conviction),
-    ("Multibagger / trap", " / ".join(value for value in [multibagger, trap] if value)),
   ]
   card_html = "\n".join(
     f"""
@@ -490,6 +674,22 @@ def cover_html(title: str, fields: dict[str, str]) -> str:
     </div>
     """
     for label, value in cards
+    if value
+  )
+  score_cards = [
+    ("Conviction", conviction, ""),
+    ("Multibagger", multibagger, ""),
+    ("Trap risk", trap, " trap"),
+  ]
+  score_html = "\n".join(
+    f"""
+    <div class="score-card{extra_class}">
+      <div class="score-label">{html.escape(label)}</div>
+      <div class="score-value">{html.escape(score_number(value) or value)}</div>
+      <div class="score-scale">/ 100</div>
+    </div>
+    """
+    for label, value, extra_class in score_cards
     if value
   )
 
@@ -506,6 +706,7 @@ def cover_html(title: str, fields: dict[str, str]) -> str:
     <h1 class="cover-title">{inline_markdown(title)}</h1>
     <div class="cover-rule"></div>
     <div class="meta-grid">{card_html}</div>
+    <div class="score-grid">{score_html}</div>
     <div class="stance-card">
       <div class="stance-label">Investment stance</div>
       <div class="stance-value">{inline_markdown(stance)}</div>
@@ -522,10 +723,11 @@ def document_html(title: str, markdown: str, fields: dict[str, str]) -> str:
 <head>
   <meta charset="utf-8" />
   <title>{html.escape(title)}</title>
-  <style>{CSS}</style>
+  <style>{css_for(fields)}</style>
 </head>
 <body>
   {cover_html(title, fields)}
+  {executive_summary_html(markdown, fields)}
   <main>
     {body_html}
   </main>
