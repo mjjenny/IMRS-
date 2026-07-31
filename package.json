@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "report:qc": "python tools/qc_report.py",
-    "report:publish": "powershell -ExecutionPolicy Bypass -File tools/publish_report.ps1"
+    "report:publish": "powershell -ExecutionPolicy Bypass -File tools/publish_report.ps1",
+    "packet:stage": "powershell -ExecutionPolicy Bypass -File tools/stage_latest_packet.ps1"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

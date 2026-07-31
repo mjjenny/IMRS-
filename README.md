@@ -35,7 +35,7 @@ Company search runs through the app backend at:
 /api/company-search
 ```
 
-Search now uses the lightweight IMRS starter directory. Create the company record from search, then use the Data page to sync richer evidence.
+Search now combines the NSE equity universe with BSE active equity securities. Create the company record from search, then use the Data page to sync richer evidence.
 
 ## Screener Fundamentals
 
@@ -150,6 +150,30 @@ IMRS is now designed as an evidence collector and report library. The preferred 
 
 ```text
 Search company > Data Hub sync > Report > Export Rich Packet > Codex writes stock-only report > Fetch Generated Report
+```
+
+To avoid manually attaching the exported packet to Codex every time, export the rich packet from the browser and then stage the newest packet from Downloads:
+
+```bash
+npm run packet:stage
+```
+
+For a specific ticker:
+
+```bash
+npm run packet:stage -- -Ticker KAYNES
+```
+
+This copies the latest exported packet into:
+
+```text
+tmp/codex-inbox/latest-packet.json
+```
+
+Then tell Codex:
+
+```text
+Use the staged packet at tmp/codex-inbox/latest-packet.json and publish the final stock-only IMRS report.
 ```
 
 The final report should discuss only the stock. It should not expose provider names, raw payloads, reconciliation notes, app errors or data-pipeline details to the reader.

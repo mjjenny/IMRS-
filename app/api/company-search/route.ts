@@ -26,13 +26,19 @@ type UniverseRow = {
   series: string;
   listingDate: string;
   isin: string;
+  exchange: "NSE" | "BSE";
+  bseCode?: string;
+  marketCap?: string;
+  group?: string;
 };
 
 const NSE_UNIVERSE_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv";
+const BSE_UNIVERSE_URL =
+  "https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w?Group=&Scripcode=&industry=&segment=Equity&status=Active";
 const UNIVERSE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_RESULTS = 20;
 
-let universeCache: { rows: UniverseRow[]; fetchedAt: number } | null = null;
+let universeCache: { nseRows: UniverseRow[]; bseRows: UniverseRow[]; fetchedAt: number } | null = null;
 
 const starterNotes: Record<string, { sector: string; note: string }> = {
   CDSL: { sector: "Capital Markets", note: "Depository infrastructure and capital-market participation play." },
@@ -119,14 +125,42 @@ function parseUniverseCsv(text: string): UniverseRow[] {
       name: cells[nameIndex],
       series: seriesIndex >= 0 ? (cells[seriesIndex] || "").toUpperCase() : "",
       listingDate: listingIndex >= 0 ? cells[listingIndex] || "" : "",
-      isin: isinIndex >= 0 ? cells[isinIndex] || "" : ""
+      isin: isinIndex >= 0 ? cells[isinIndex] || "" : "",
+      exchange: "NSE" as const
     }))
     .filter((row) => !row.series || ["EQ", "BE", "BZ"].includes(row.series));
 }
 
-async function loadUniverse(): Promise<UniverseRow[]> {
+type BseApiRow = {
+  SCRIP_CD?: string;
+  Scrip_Name?: string;
+  Status?: string;
+  GROUP?: string;
+  ISIN_NUMBER?: string;
+  scrip_id?: string;
+  Mktcap?: string;
+};
+
+function parseBseUniverse(rows: BseApiRow[]): UniverseRow[] {
+  return rows
+    .filter((row) => row.Status?.toLowerCase() === "active")
+    .filter((row) => row.SCRIP_CD && row.Scrip_Name)
+    .map((row) => ({
+      symbol: (row.scrip_id || row.SCRIP_CD || "").toUpperCase(),
+      name: row.Scrip_Name || "",
+      series: row.GROUP || "",
+      listingDate: "",
+      isin: row.ISIN_NUMBER || "",
+      exchange: "BSE" as const,
+      bseCode: row.SCRIP_CD,
+      marketCap: row.Mktcap || "",
+      group: row.GROUP || ""
+    }));
+}
+
+async function loadNseUniverse(): Promise<UniverseRow[]> {
   if (universeCache && Date.now() - universeCache.fetchedAt < UNIVERSE_TTL_MS) {
-    return universeCache.rows;
+    return universeCache.nseRows;
   }
 
   const response = await fetch(NSE_UNIVERSE_URL, {
@@ -142,9 +176,49 @@ async function loadUniverse(): Promise<UniverseRow[]> {
 
   const rows = parseUniverseCsv(await response.text());
   if (!rows.length) throw new Error("NSE equity universe returned no parseable rows.");
-
-  universeCache = { rows, fetchedAt: Date.now() };
   return rows;
+}
+
+async function loadBseUniverse(): Promise<UniverseRow[]> {
+  if (universeCache && Date.now() - universeCache.fetchedAt < UNIVERSE_TTL_MS) {
+    return universeCache.bseRows;
+  }
+
+  const response = await fetch(BSE_UNIVERSE_URL, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+      Accept: "application/json,text/plain,*/*",
+      "Accept-Language": "en-US,en;q=0.9",
+      Origin: "https://www.bseindia.com",
+      Referer: "https://www.bseindia.com/corporates/List_Scrips.html"
+    },
+    cache: "no-store"
+  });
+  if (!response.ok) throw new Error(`BSE equity universe fetch failed with ${response.status}`);
+
+  const payload = (await response.json()) as BseApiRow[];
+  const rows = parseBseUniverse(Array.isArray(payload) ? payload : []);
+  if (!rows.length) throw new Error("BSE equity universe returned no parseable rows.");
+  return rows;
+}
+
+async function loadUniverse(): Promise<{ rows: UniverseRow[]; nseCount: number; bseCount: number }> {
+  if (universeCache && Date.now() - universeCache.fetchedAt < UNIVERSE_TTL_MS) {
+    return {
+      rows: [...universeCache.nseRows, ...universeCache.bseRows],
+      nseCount: universeCache.nseRows.length,
+      bseCount: universeCache.bseRows.length
+    };
+  }
+
+  const [nseRows, bseRows] = await Promise.all([
+    loadNseUniverse().catch(() => []),
+    loadBseUniverse().catch(() => [])
+  ]);
+  if (!nseRows.length && !bseRows.length) throw new Error("NSE/BSE equity universe returned no parseable rows.");
+
+  universeCache = { nseRows, bseRows, fetchedAt: Date.now() };
+  return { rows: [...nseRows, ...bseRows], nseCount: nseRows.length, bseCount: bseRows.length };
 }
 
 function normalize(value: string) {
@@ -153,14 +227,18 @@ function normalize(value: string) {
 
 function rankMatch(row: UniverseRow, query: string) {
   const symbol = row.symbol.toLowerCase();
+  const bseCode = (row.bseCode || "").toLowerCase();
   const name = normalize(row.name);
   const needle = normalize(query);
   if (!needle) return -1;
   if (symbol === needle) return 0;
+  if (bseCode === needle) return 0;
   if (symbol.startsWith(needle)) return 1;
+  if (bseCode.startsWith(needle)) return 1;
   if (name.startsWith(needle)) return 2;
   if (name.split(" ").some((word) => word.startsWith(needle))) return 3;
   if (symbol.includes(needle)) return 4;
+  if (bseCode.includes(needle)) return 4;
   if (name.includes(needle)) return 5;
   return -1;
 }
@@ -171,12 +249,20 @@ function toResult(row: UniverseRow): SearchResult {
     ...blankResult(),
     name: row.name,
     ticker: row.symbol,
-    exchange: "NSE",
+    exchange: row.exchange,
     sector: curated?.sector || "",
+    marketCap: row.marketCap || "",
     note:
       curated?.note ||
-      [`NSE ${row.series || "EQ"} series`, row.listingDate ? `listed ${row.listingDate}` : "", row.isin].filter(Boolean).join(" - "),
-    source: "NSE equity universe"
+      [
+        row.exchange === "BSE" ? `BSE code ${row.bseCode || row.symbol}` : `NSE ${row.series || "EQ"} series`,
+        row.exchange === "BSE" && row.group ? `group ${row.group}` : "",
+        row.listingDate ? `listed ${row.listingDate}` : "",
+        row.isin
+      ]
+        .filter(Boolean)
+        .join(" - "),
+    source: `${row.exchange} equity universe`
   };
 }
 
@@ -184,7 +270,7 @@ function searchUniverse(rows: UniverseRow[], query: string) {
   return rows
     .map((row) => ({ row, rank: rankMatch(row, query) }))
     .filter((item) => item.rank >= 0)
-    .sort((a, b) => a.rank - b.rank || a.row.symbol.localeCompare(b.row.symbol))
+    .sort((a, b) => a.rank - b.rank || a.row.exchange.localeCompare(b.row.exchange) || a.row.symbol.localeCompare(b.row.symbol))
     .slice(0, MAX_RESULTS)
     .map((item) => toResult(item.row));
 }
@@ -204,19 +290,19 @@ export async function GET(request: Request) {
     return NextResponse.json({
       results: starterCompanies(),
       source: "starter",
-      message: "Type a symbol or company name to search all NSE-listed companies."
+      message: "Type a symbol, BSE code or company name to search NSE and BSE-listed companies."
     });
   }
 
   try {
-    const rows = await loadUniverse();
+    const { rows, nseCount, bseCount } = await loadUniverse();
     const results = searchUniverse(rows, query);
     return NextResponse.json({
       results,
-      source: "nse-universe",
+      source: "exchange-universe",
       message: results.length
-        ? `Showing ${results.length} match${results.length > 1 ? "es" : ""} from ${rows.length} NSE-listed companies. Import one, then sync evidence from Data.`
-        : `No match in ${rows.length} NSE-listed companies. Check the spelling or create the company manually.`
+        ? `Showing ${results.length} match${results.length > 1 ? "es" : ""} from ${nseCount} NSE and ${bseCount} BSE active equity securities. Import one, then sync evidence from Data.`
+        : `No match in ${nseCount} NSE and ${bseCount} BSE active equity securities. Check the spelling or create the company manually.`
     });
   } catch {
     const starterMatches = starterSearch(query);

@@ -2924,7 +2924,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CompanySearchResult[]>(starterCompanies);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchMessage, setSearchMessage] = useState("Search the built-in starter directory, then sync richer evidence from Data.");
+  const [searchMessage, setSearchMessage] = useState("Search NSE and BSE companies, then sync richer evidence from Data.");
   const [trendlyneStatus, setTrendlyneStatus] = useState<TrendlyneStatus | null>(null);
   const [trendlyneLoading, setTrendlyneLoading] = useState(false);
   const [syncingSymbol, setSyncingSymbol] = useState("");
@@ -2982,7 +2982,7 @@ export default function Home() {
           message?: string;
         };
         setSearchResults(payload.results || []);
-        setSearchMessage(payload.message || "Showing starter directory results.");
+        setSearchMessage(payload.message || "Showing exchange directory results.");
       } catch {
         if (!controller.signal.aborted) {
           setSearchResults([]);
@@ -3722,7 +3722,7 @@ export default function Home() {
     return (
       <>
         <PageHead eyebrow="Company discovery" title="Company Search">
-          Search the company directory, then import a company into your research workspace.
+          Search NSE and BSE companies, then import a company into your research workspace.
         </PageHead>
         <form
           className="panel"
@@ -3735,7 +3735,7 @@ export default function Home() {
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search by company name, ticker or sector"
+              placeholder="Search by company name, NSE ticker or BSE code"
             />
           </div>
           <div className="stack">
@@ -4161,7 +4161,7 @@ export default function Home() {
             {reportText.trim() ? (
               <textarea className="report-output" value={reportText} onChange={(event) => updateSelected({ aiOutput: event.target.value })} />
             ) : (
-              <div className="info">No final report imported yet. Export the evidence packet, generate the report with Codex, then import it here.</div>
+              <div className="info">No final report imported yet. Export the evidence packet, stage it for Codex, then fetch or import the published report here.</div>
             )}
           </section>
 
