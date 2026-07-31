@@ -2493,6 +2493,13 @@ function externalLookupTicker(value: string) {
     .replace(/-(BE|EQ)$/i, "");
 }
 
+function generatedReportUrls(ticker: string) {
+  const lookupSymbol = externalLookupTicker(ticker);
+  return Array.from(new Set([lookupSymbol, ticker.toUpperCase()]))
+    .filter(Boolean)
+    .map((symbol) => `/reports/${encodeURIComponent(symbol)}.json`);
+}
+
 function tickersMatch(left: string, right: string) {
   return externalLookupTicker(left) === externalLookupTicker(right);
 }
@@ -2929,6 +2936,8 @@ export default function Home() {
   const [trendlyneLoading, setTrendlyneLoading] = useState(false);
   const [syncingSymbol, setSyncingSymbol] = useState("");
   const [reportFetching, setReportFetching] = useState(false);
+  const [generatedReportAvailable, setGeneratedReportAvailable] = useState(false);
+  const [generatedReportChecking, setGeneratedReportChecking] = useState(false);
   const [packetBridgeMessage, setPacketBridgeMessage] = useState("");
 
   useEffect(() => {
@@ -3001,6 +3010,37 @@ export default function Home() {
   }, [searchQuery, hydrated]);
 
   const selected = data.companies.find((company) => company.id === selectedId) || data.companies[0];
+
+  useEffect(() => {
+    if (!hydrated || !selected?.ticker) {
+      setGeneratedReportAvailable(false);
+      setGeneratedReportChecking(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    async function checkGeneratedReport() {
+      setGeneratedReportChecking(true);
+      try {
+        for (const url of generatedReportUrls(selected.ticker)) {
+          const response = await fetch(url, { cache: "no-store", method: "HEAD", signal: controller.signal });
+          if (response.ok) {
+            setGeneratedReportAvailable(true);
+            return;
+          }
+        }
+        setGeneratedReportAvailable(false);
+      } catch {
+        if (!controller.signal.aborted) setGeneratedReportAvailable(false);
+      } finally {
+        if (!controller.signal.aborted) setGeneratedReportChecking(false);
+      }
+    }
+
+    void checkGeneratedReport();
+    return () => controller.abort();
+  }, [hydrated, selected?.ticker, selected?.codexReports?.length]);
+
   const filteredMini = data.companies.filter((company) =>
     `${company.name} ${company.ticker}`.toLowerCase().includes(sideQuery.toLowerCase())
   );
@@ -3477,7 +3517,7 @@ export default function Home() {
     }
 
     const lookupSymbol = externalLookupTicker(company.ticker);
-    const candidates = Array.from(new Set([lookupSymbol, company.ticker.toUpperCase()])).map((symbol) => `/reports/${encodeURIComponent(symbol)}.json`);
+    const candidates = generatedReportUrls(company.ticker);
     setReportFetching(true);
     try {
       let response: Response | undefined;
@@ -4117,36 +4157,47 @@ export default function Home() {
       const fundamentalsRecord = findFundamentals(company.ticker, company.name);
       const reportText = company.codexReports?.[0]?.content || scrubReportText(company.aiOutput);
       const finalReportCount = company.codexReports?.length || 0;
+      const reportLoaded = Boolean(reportText.trim());
+      const reportPublished = finalReportCount > 0 || generatedReportAvailable;
+      const canFetchReport = Boolean(company.ticker && generatedReportAvailable && !reportFetching);
+      const reportActionStatus = reportLoaded
+        ? "Final report loaded. PDF export is available."
+        : generatedReportChecking
+          ? "Checking whether Codex has published the final report..."
+          : generatedReportAvailable
+            ? "Final report found. Fetch it into this company record."
+            : "Export the rich packet first. The remaining actions unlock after Codex publishes the final report.";
       return (
         <div className="report-stack">
           <section className="panel report-hero">
             <div>
               <span className="eyebrow">Final stock report</span>
-              <h2>{finalReportCount ? "Institutional report ready" : "Export evidence packet for Codex"}</h2>
+              <h2>{reportLoaded ? "Institutional report ready" : generatedReportAvailable ? "Generated report ready to fetch" : "Export evidence packet for Codex"}</h2>
               <p>Use this page to move from collected evidence to a clean stock-only research report and PDF.</p>
             </div>
             <div className="toolbar">
               <button className="secondary" onClick={exportCodexResearchPacket}>
                 <Download size={17} /> Export Rich Packet
               </button>
-              <label className="secondary file-label">
+              <label className={`secondary file-label ${reportPublished ? "" : "disabled-action"}`} aria-disabled={!reportPublished}>
                 <Upload size={17} /> Import Final Report
-                <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} />
+                <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} disabled={!reportPublished} />
               </label>
-              <button className="secondary" onClick={() => fetchGeneratedReport()} disabled={!selected?.ticker || reportFetching}>
+              <button className="secondary" onClick={() => fetchGeneratedReport()} disabled={!canFetchReport}>
                 <FileText size={17} /> {reportFetching ? "Fetching" : "Fetch Generated Report"}
               </button>
-              <button className="secondary" onClick={exportSelectedReportPdf} disabled={!reportText.trim()}>
+              <button className="secondary" onClick={exportSelectedReportPdf} disabled={!reportLoaded}>
                 <FileDown size={17} /> Export PDF
               </button>
             </div>
+            <div className="info">{reportActionStatus}</div>
             {packetBridgeMessage ? <div className="info">{packetBridgeMessage}</div> : null}
           </section>
 
           <div className="stats compact-stats report-stats">
             <Stat label="Evidence packet" value={fundamentalsRecord || trendlyneIntel ? "Ready" : "Needs sync"} />
             <Stat label="Final reports" value={finalReportCount} />
-            <Stat label="PDF export" value={reportText.trim() ? "Ready" : "Import report"} />
+            <Stat label="PDF export" value={reportLoaded ? "Ready" : generatedReportAvailable ? "Fetch first" : "Locked"} />
             <Stat label="Report style" value="Stock only" />
           </div>
 
