@@ -3953,7 +3953,13 @@ export default function Home() {
             <Stat label="MCP URL" value={trendlyneStatus?.urlConfigured ? "Configured" : "Missing"} />
             <Stat
               label="Auth"
-              value={trendlyneStatus?.tokenConfigured || trendlyneStatus?.apiKeyConfigured ? "Configured" : "Not set"}
+              value={
+                trendlyneStatus?.tokenConfigured || trendlyneStatus?.apiKeyConfigured
+                  ? "Configured"
+                  : trendlyneStatus?.connected
+                    ? "Implicit"
+                    : "Not set"
+              }
             />
             <Stat label="Connection" value={trendlyneStatus?.connected ? "Connected" : "Not connected"} />
             <Stat label="Tools" value={trendlyneStatus?.toolCount ? String(trendlyneStatus.toolCount) : "0"} />

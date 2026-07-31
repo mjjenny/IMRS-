@@ -10,7 +10,8 @@
     "report:qc": "python tools/qc_report.py",
     "report:publish": "powershell -ExecutionPolicy Bypass -File tools/publish_report.ps1",
     "packet:stage": "powershell -ExecutionPolicy Bypass -File tools/stage_latest_packet.ps1",
-    "packet:bridge": "node tools/codex_packet_bridge.mjs"
+    "packet:bridge": "node tools/codex_packet_bridge.mjs",
+    "smoke": "node tools/smoke_check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
