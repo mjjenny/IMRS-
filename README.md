@@ -156,6 +156,8 @@ The final report should discuss only the stock. It should not expose provider na
 
 The exported packet is intentionally different from a normal app backup. It contains cleaned, analyst-ready sections: company profile, validated financial metrics with units and periods, ownership evidence, market and event evidence, saved research notes, risk/catalyst trackers, scorecard, valuation sanity checks and a report brief for Codex. Raw table dumps are suppressed from the primary packet so the final report starts from readable evidence instead of connector output.
 
+The rich packet also includes a verification plan for Codex: price/market-cap/EPS/P/E sanity checks, filing checks, a "Codex must verify" checklist, cleaner financial tables, ownership tables, formatted news/catalyst evidence and withheld-metric notes where a figure fails validation.
+
 Codex-generated final reports can be published inside the app at:
 
 ```text

@@ -835,7 +835,7 @@ function sourceCoverageRows(company: Company, record?: FundamentalsRecord, intel
   const rows: Array<[string, string]> = [
     ["Market price", company.financials.currentPrice ? `Current price captured: INR ${company.financials.currentPrice}` : "Not captured for this company"],
     [
-      "Trendlyne fundamentals",
+      "Structured fundamentals",
       record
         ? `Available for ${record.companyName || company.name}; period ${record.reportDate || "Undated/Unverified"}; imported ${new Date(
             record.importedAt
@@ -843,16 +843,16 @@ function sourceCoverageRows(company: Company, record?: FundamentalsRecord, intel
         : "Missing - sync fundamentals before report generation"
     ],
     [
-      "Trendlyne intelligence",
+      "Market intelligence",
       intelligence
-        ? `Available via ${intelligence.transport}; imported ${new Date(intelligence.importedAt).toLocaleString("en-IN")}`
-        : "Missing - sync full Trendlyne intelligence pack"
+        ? `Available; imported ${new Date(intelligence.importedAt).toLocaleString("en-IN")}`
+        : "Missing - sync full market-intelligence pack"
     ],
     [
       "Ownership",
       record?.promoterHolding || record?.fiiHolding || record?.diiHolding
         ? `Promoter/FII/DII captured: ${record?.promoterHolding || "-"}% / ${record?.fiiHolding || "-"}% / ${record?.diiHolding || "-"}%`
-        : "Missing - fetch latest shareholding from Trendlyne/NSE filing"
+        : "Missing - fetch latest shareholding from company/exchange filing"
     ],
     [
       "Valuation basis",
@@ -1203,6 +1203,8 @@ function readerSafeText(value: string) {
     .replace(/\bTrendlyne\b/gi, "Market intelligence")
     .replace(/\bNSE\b/gi, "Exchange")
     .replace(/\bMCP\b/gi, "data")
+    .replace(/\bAPI\b/gi, "data feed")
+    .replace(/\bpayload\b/gi, "source text")
     .trim();
 }
 
@@ -1248,7 +1250,7 @@ function buildBusinessSummary(company: Company, record: FundamentalsRecord, inte
 
   return `${businessModelDraft(company, record)}
 
-Trendlyne support signal:
+Market-intelligence support signal:
 ${overview || "No clean business-description evidence was returned; use annual report and investor presentation for source-level verification."}
 
 Evidence snapshot: market cap INR ${metric(record.marketCap || company.marketCap, " cr")}; P/E ${usablePe(company, record) ? formatNumber(usablePe(company, record), 2) : "N/V"}; ROE ${metric(
@@ -1270,7 +1272,7 @@ function buildIndustryOpportunity(company: Company, record: FundamentalsRecord, 
   );
   return `${sectorLine}
 
-Trendlyne signal: sales growth is ${growthLabel(record.salesGrowth)} at ${evidenceMetric(record.salesGrowth, "%")}; DVM momentum is ${metric(
+Market-intelligence signal: sales growth is ${growthLabel(record.salesGrowth)} at ${evidenceMetric(record.salesGrowth, "%")}; DVM momentum is ${metric(
     record.dvmMomentum
   )} (${scoreWord(record.dvmMomentum)}).${recentEvidence ? `\n\nRecent evidence:\n${recentEvidence}` : ""}`;
 }
@@ -1286,7 +1288,7 @@ function buildManagementAssessment(record: FundamentalsRecord, intelligence: Tre
 
 Governance read-through: high promoter ownership can support alignment, but it is not proof of governance quality. Review pledges, related-party transactions, auditor notes, capital allocation and insider/SAST changes.
 
-Trendlyne ownership evidence:
+Ownership and insider evidence:
 ${sast}`;
 }
 
@@ -1297,7 +1299,7 @@ function buildMultibaggerCase(company: Company, record: FundamentalsRecord, inte
     Number(record.roce) >= 15 ? `ROCE is acceptable/strong at ${record.roce}%` : "",
     Number(record.debtEquity) <= 0.5 && record.debtEquity ? `balance sheet leverage is controlled at ${record.debtEquity} debt/equity` : "",
     Number(record.promoterHolding) >= 45 ? `promoter holding is meaningful at ${record.promoterHolding}%` : "",
-    Number(record.dvmDurability) >= 60 ? `Trendlyne durability score is supportive at ${record.dvmDurability}` : "",
+    Number(record.dvmDurability) >= 60 ? `durability score is supportive at ${record.dvmDurability}` : "",
     hasMeaningfulText(intelligence.news) ? "recent news flow provides items to investigate as possible catalysts" : ""
   ].filter(Boolean);
 
@@ -1305,13 +1307,13 @@ function buildMultibaggerCase(company: Company, record: FundamentalsRecord, inte
     ? `${record.companyName || company.name} is a mega-cap and should not be judged with a small-cap 5x/10x screen. Treat it as a compounder/re-rating candidate: the question is whether segment-level earnings, free cash flow and ROCE can improve enough to create attractive risk-adjusted returns from the current valuation.
 
 Current supporting evidence:
-${positives.length ? positives.map((item) => `- ${item}`).join("\n") : "- Trendlyne data does not yet show enough high-quality compounder evidence."}
+${positives.length ? positives.map((item) => `- ${item}`).join("\n") : "- Saved data does not yet show enough high-quality compounder evidence."}
 
 What must be proven next: segment-wise growth and margin improvement in O2C/Oil & Gas, Retail, Digital/Jio, New Energy and Others; cash conversion; disciplined capex; governance; and valuation support.`
     : `${record.companyName || company.name} can be treated as a possible multibagger candidate only if the business can compound earnings for several years without serious governance or balance-sheet deterioration.
 
 Current supporting evidence:
-${positives.length ? positives.map((item) => `- ${item}`).join("\n") : "- Trendlyne data does not yet show enough high-quality multibagger evidence."}
+${positives.length ? positives.map((item) => `- ${item}`).join("\n") : "- Saved data does not yet show enough high-quality multibagger evidence."}
 
 What must be proven next: large growth runway, durable moat, improving ROCE/ROE, cash conversion, reinvestment opportunity, management execution and valuation discipline.`;
 }
@@ -1340,7 +1342,7 @@ function buildBearThesis(company: Company, record: FundamentalsRecord, intellige
     Number(record.roce) > 0 && Number(record.roce) < 12 ? `ROCE is modest at ${record.roce}%` : "",
     Number(record.roe) > 0 && Number(record.roe) < 12 ? `ROE is modest at ${record.roe}%` : "",
     pe > 35 ? `valuation may already price in optimism at ${formatNumber(pe, 2)}x earnings` : "",
-    Number(record.dvmMomentum) > 0 && Number(record.dvmMomentum) < 45 ? `Trendlyne momentum is weak at ${record.dvmMomentum}` : "",
+    Number(record.dvmMomentum) > 0 && Number(record.dvmMomentum) < 45 ? `momentum score is weak at ${record.dvmMomentum}` : "",
     /sell|disposal|pledge|sast|insider/i.test(intelligence.sast) ? "insider/SAST activity needs forensic review" : ""
   ].filter(Boolean);
 
@@ -1416,7 +1418,7 @@ function buildResearchReview(record: FundamentalsRecord, intelligence: Trendlyne
   return {
     quarter: new Date(record.importedAt || intelligence.importedAt).toLocaleDateString("en-IN", { month: "short", year: "numeric" }),
     verdict: "Unchanged",
-    notes: `Trendlyne/NSE sync created a first-pass research draft. Verify annual report, latest quarterly results, concall commentary, cash flow and governance before changing position size.`
+    notes: `Data sync created a first-pass research draft. Verify annual report, latest quarterly results, concall commentary, cash flow and governance before changing position size.`
   };
 }
 
@@ -1536,7 +1538,7 @@ function extractTableRows(text: string, maxRows = 5) {
 }
 
 function cleanTrendlyneIntel(title: string, value: string) {
-  if (!hasMeaningfulText(value)) return "No useful Trendlyne data returned for this section.";
+  if (!hasMeaningfulText(value)) return "No useful market-intelligence data returned for this section.";
   const lowerTitle = title.toLowerCase();
   const identity = extractStockIdentity(value);
   const lines: string[] = [];
@@ -1577,7 +1579,7 @@ function cleanTrendlyneIntel(title: string, value: string) {
     if (trends.length) lines.push("", "Trend:", ...trends.map((item) => `- ${item}`));
   } else if (lowerTitle.includes("insider") || lowerTitle.includes("bulk")) {
     const rows = extractTableRows(value);
-    if (/isCurtail:\s*True/i.test(value)) lines.push("Trendlyne returned a curtailed list; review the source for the complete table.");
+    if (/isCurtail:\s*True/i.test(value)) lines.push("The transaction list is curtailed; review the source for the complete table.");
     if (rows.length) lines.push("Recent transactions:", ...rows.map((item) => `- ${item}`));
   } else if (lowerTitle.includes("document")) {
     const cleanDocuments = extractDocumentRows(value);
@@ -1589,7 +1591,7 @@ function cleanTrendlyneIntel(title: string, value: string) {
   const clean = lines.join("\n").trim();
   if (clean) return clean;
   if (looksLikeRawTrendlyneText(value)) {
-    return "Trendlyne returned structured table data for this section. No clean summary rows were extracted; review the source table before using it in the thesis.";
+    return "Structured table data was returned for this section. No clean summary rows were extracted; review the source table before using it in the thesis.";
   }
   return value
     .split(/\r?\n/)
@@ -1636,19 +1638,20 @@ function buildMetricsForPacket(company: Company, record?: FundamentalsRecord) {
   const m = metricSet(company, record);
   const review = dataQualityReview(company, record);
   const period = metricPeriod(record);
+  const basis = sourceBasis(record);
   const derived = derivedPe(company, record);
   const netMargin = netMarginProxy(company, record);
   const entries = [
-    metricEntry("Market capitalisation", m.marketCap, "INR crore", period, record ? record.source : "IMRS company record"),
+    metricEntry("Market capitalisation", m.marketCap, "INR crore", period, basis),
     metricEntry("Current price", m.currentPrice, "INR/share", period, company.financials.currentPrice ? "company record" : "missing"),
-    metricEntry("Revenue", m.revenue, "INR crore", period, record ? record.source : "IMRS company record"),
-    metricEntry("Net profit", m.profit, "INR crore", period, record ? record.source : "IMRS company record"),
+    metricEntry("Revenue", m.revenue, "INR crore", period, basis),
+    metricEntry("Net profit", m.profit, "INR crore", period, basis),
     metricEntry(
       "EPS",
       review.perShareMismatch || review.shareCountMismatch ? "" : m.eps,
       "INR/share",
       period,
-      record ? record.source : "IMRS company record",
+      basis,
       review.perShareMismatch || review.shareCountMismatch ? "withheld" : m.eps ? "available" : "missing",
       review.perShareMismatch || review.shareCountMismatch ? "Withheld because EPS/P/E/price or share-count basis failed validation." : ""
     ),
@@ -1657,19 +1660,19 @@ function buildMetricsForPacket(company: Company, record?: FundamentalsRecord) {
       review.peInvalid && derived ? formatNumber(derived, 2) : review.peInvalid ? "" : m.pe,
       "x",
       period,
-      review.peInvalid && derived ? "derived from price/EPS" : record ? record.source : "IMRS company record",
+      review.peInvalid && derived ? "derived from price/EPS" : basis,
       review.peInvalid && !derived ? "withheld" : m.pe || derived ? "available" : "missing",
       review.peInvalid && derived ? "Raw P/E failed validation; derived value should be used cautiously." : ""
     ),
-    metricEntry("ROE", m.roe, "%", period, record ? record.source : "IMRS company record"),
-    metricEntry("ROCE", m.roce, "%", period, record ? record.source : "IMRS company record"),
-    metricEntry("Debt/equity", m.debtEquity, "x", period, record ? record.source : "IMRS company record"),
+    metricEntry("ROE", m.roe, "%", period, basis),
+    metricEntry("ROCE", m.roce, "%", period, basis),
+    metricEntry("Debt/equity", m.debtEquity, "x", period, basis),
     metricEntry(
       "Operating margin",
       review.opmInvalid ? "" : m.opm,
       "%",
       period,
-      record ? record.source : "IMRS company record",
+      basis,
       review.opmInvalid ? "withheld" : m.opm ? "available" : "missing",
       review.opmInvalid ? "Suppressed because the margin value failed validation." : ""
     ),
@@ -1679,28 +1682,380 @@ function buildMetricsForPacket(company: Company, record?: FundamentalsRecord) {
       review.cfoInvalid ? "" : m.cfo,
       "INR crore",
       period,
-      record ? record.source : "IMRS company record",
+      basis,
       review.cfoInvalid ? "withheld" : m.cfo ? "available" : "missing",
       review.cfoInvalid ? "Suppressed because cash-flow value failed unit/magnitude validation." : ""
     ),
-    metricEntry("Sales growth", m.salesGrowth, "%", period, record ? record.source : "IMRS company record"),
-    metricEntry("Profit growth", m.profitGrowth, "%", period, record ? record.source : "IMRS company record"),
-    metricEntry("Promoter holding", m.promoterHolding, "%", period, record ? record.source : "IMRS company record"),
-    metricEntry("FII holding", m.fiiHolding, "%", period, record ? record.source : "IMRS company record"),
-    metricEntry("DII holding", m.diiHolding, "%", period, record ? record.source : "IMRS company record"),
-    metricEntry("Institutional holding", m.institutionalHolding, "%", period, record ? record.source : "IMRS company record"),
-    metricEntry("Durability score", m.dvmDurability, "score", period, record ? record.source : "IMRS company record"),
-    metricEntry("Valuation score", m.dvmValuation, "score", period, record ? record.source : "IMRS company record"),
-    metricEntry("Momentum score", m.dvmMomentum, "score", period, record ? record.source : "IMRS company record"),
-    metricEntry("Analyst score", m.analystScore, "score", period, record ? record.source : "IMRS company record")
+    metricEntry("Sales growth", m.salesGrowth, "%", period, basis),
+    metricEntry("Profit growth", m.profitGrowth, "%", period, basis),
+    metricEntry("Promoter holding", m.promoterHolding, "%", period, basis),
+    metricEntry("FII holding", m.fiiHolding, "%", period, basis),
+    metricEntry("DII holding", m.diiHolding, "%", period, basis),
+    metricEntry("Institutional holding", m.institutionalHolding, "%", period, basis),
+    metricEntry("Durability score", m.dvmDurability, "score", period, basis),
+    metricEntry("Valuation score", m.dvmValuation, "score", period, basis),
+    metricEntry("Momentum score", m.dvmMomentum, "score", period, basis),
+    metricEntry("Analyst score", m.analystScore, "score", period, basis)
   ];
 
   return entries;
 }
 
+function sourceBasis(record?: FundamentalsRecord, fallback = "saved company record") {
+  if (!record?.source) return fallback;
+  const source = record.source.toLowerCase();
+  if (source.includes("shareholding") || source.includes("exchange") || source.includes("nse")) return "exchange/company filing";
+  if (source.includes("screener")) return "structured financial workbook";
+  if (source.includes("trendlyne")) return "structured market-intelligence feed";
+  return "saved structured source";
+}
+
+function metricRow(label: string, latest: string, period: string, basis: string, verification: string, interpretation: string) {
+  return {
+    metric: label,
+    latest,
+    period,
+    basis,
+    verification,
+    interpretation
+  };
+}
+
+function buildFinancialTablesForPacket(company: Company, record?: FundamentalsRecord) {
+  const m = metricSet(company, record);
+  const review = dataQualityReview(company, record);
+  const period = metricPeriod(record);
+  const basis = sourceBasis(record);
+  const pe = usablePe(company, record);
+  const derived = derivedPe(company, record);
+  const netMargin = netMarginProxy(company, record);
+
+  return {
+    primaryFinancialTable: [
+      metricRow(
+        "Revenue",
+        m.revenue ? `INR ${m.revenue} crore` : "Not verified",
+        period,
+        basis,
+        m.revenue ? "Tie to latest annual/TTM/quarterly result before final report." : "Fetch latest reported revenue.",
+        "Use revenue trend to judge scale and growth runway; do not infer quality without margin and cash conversion."
+      ),
+      metricRow(
+        "Net profit",
+        m.profit ? `INR ${m.profit} crore` : "Not verified",
+        period,
+        basis,
+        m.profit ? "Check exceptional items, tax rate and base effects." : "Fetch latest reported PAT.",
+        "Profit growth must be separated into recurring performance and one-off effects."
+      ),
+      metricRow(
+        "EPS",
+        review.perShareMismatch || review.shareCountMismatch || !m.eps ? "Withheld pending share-basis validation" : `INR ${m.eps}`,
+        period,
+        basis,
+        "Reconcile EPS with price/P/E and profit/share count.",
+        "EPS is suitable for valuation only after corporate actions and share basis are reconciled."
+      ),
+      metricRow(
+        "Operating margin",
+        review.opmInvalid || !m.opm ? (netMargin ? `Net margin proxy ${formatNumber(netMargin, 2)}%` : "Not verified") : `${m.opm}%`,
+        period,
+        review.opmInvalid && netMargin ? "derived from net profit/revenue" : basis,
+        "Fetch EBITDA/operating-profit line before using operating-margin language.",
+        "Margin quality determines whether growth is translating into operating leverage."
+      ),
+      metricRow(
+        "Operating cash flow",
+        review.cfoInvalid || !m.cfo ? "Withheld pending cash-flow statement" : `INR ${m.cfo} crore`,
+        period,
+        basis,
+        "Verify from cash-flow statement and compare with PAT.",
+        "Cash conversion is essential before upgrading to compounder or multibagger status."
+      )
+    ],
+    qualityRatiosTable: [
+      metricRow("ROE", m.roe ? `${m.roe}%` : "Not verified", period, basis, "Verify against average equity.", "Shows shareholder capital efficiency."),
+      metricRow("ROCE", m.roce ? `${m.roce}%` : "Not verified", period, basis, "Verify EBIT/capital employed basis.", "Most important quality ratio for non-financial businesses."),
+      metricRow("Debt/equity", m.debtEquity ? `${m.debtEquity}x` : "Not verified", period, basis, "Reconcile borrowings and net worth.", "Controls balance-sheet and dilution risk."),
+      metricRow("Sales growth", m.salesGrowth ? `${m.salesGrowth}%` : "Not verified", period, basis, "Check period and whether growth is organic.", "Growth quality depends on sustainability and cash conversion."),
+      metricRow("Profit growth", m.profitGrowth ? `${m.profitGrowth}%` : "Not verified", period, basis, "Check exceptional/base-effect context.", "Profit growth is useful only if recurring.")
+    ],
+    valuationInputsTable: [
+      metricRow(
+        "Current price",
+        m.currentPrice ? `INR ${m.currentPrice}` : "Not verified",
+        period,
+        "market quote captured in app",
+        "Cross-check against latest quote before final report.",
+        "Use only as reference price, not investment conclusion."
+      ),
+      metricRow(
+        "Market capitalisation",
+        m.marketCap ? `INR ${m.marketCap} crore` : "Not verified",
+        period,
+        basis,
+        "Reconcile market cap with price and implied share count.",
+        "Market cap controls whether this is a multibagger, compounder or re-rating setup."
+      ),
+      metricRow(
+        "P/E",
+        review.peInvalid && derived ? `${formatNumber(derived, 2)}x derived` : pe ? `${formatNumber(pe, 2)}x` : "Not verified",
+        period,
+        review.peInvalid && derived ? "derived from price/EPS" : basis,
+        "Do not use invalid or negative P/E. Reconcile with EPS and price.",
+        "Valuation scenario must be built from validated or explicitly derived inputs."
+      )
+    ],
+    withheldMetrics: [
+      review.perShareMismatch || review.shareCountMismatch ? "EPS withheld from primary table until share-basis reconciliation passes." : "",
+      review.peInvalid && !derived ? "P/E withheld because reported value is invalid and cannot be derived." : "",
+      review.opmInvalid ? "Operating margin withheld until operating-profit/EBITDA source is verified." : "",
+      review.cfoInvalid ? "Operating cash flow withheld until cash-flow statement confirms unit and magnitude." : ""
+    ].filter(Boolean)
+  };
+}
+
+function buildOwnershipTableForPacket(company: Company, record?: FundamentalsRecord, shareholding?: ShareholdingRecord) {
+  const m = metricSet(company, record);
+  const period = shareholding?.asOnDate || metricPeriod(record);
+  const rows = [
+    metricRow(
+      "Promoter holding",
+      m.promoterHolding ? `${m.promoterHolding}%` : "Not verified",
+      period,
+      shareholding ? "exchange/company shareholding filing" : sourceBasis(record),
+      "Cross-check latest quarter, pledge and promoter group changes.",
+      "High promoter holding can support alignment, but trend and pledge matter more than the absolute number."
+    ),
+    metricRow(
+      "FII holding",
+      m.fiiHolding ? `${m.fiiHolding}%` : "Not verified",
+      period,
+      sourceBasis(record),
+      "Verify foreign institutional category taxonomy.",
+      "Rising FII ownership may support liquidity but can increase expectation risk."
+    ),
+    metricRow(
+      "DII holding",
+      m.diiHolding ? `${m.diiHolding}%` : "Not verified",
+      period,
+      sourceBasis(record),
+      "Separate mutual funds, insurance and other institutions where possible.",
+      "Domestic institutional ownership helps validate interest but is not a business-quality substitute."
+    ),
+    metricRow(
+      "Public/other implied",
+      ownershipLines(company, record).find((line) => line.startsWith("Public/other implied"))?.replace("Public/other implied: ", "") || "Not verified",
+      period,
+      "derived from ownership categories",
+      "Do not use if FII/DII/institutional categories overlap.",
+      "Float matters for liquidity, volatility and institutional buying room."
+    )
+  ];
+
+  return {
+    ownershipTable: rows,
+    exchangeFilingHistory: shareholding?.history?.slice(0, 8) || [],
+    trendSummary: shareholding?.history?.length
+      ? shareholding.history
+          .slice(0, 4)
+          .map((item) => `${item.asOnDate || "Undated"}: promoter ${item.promoterHolding || "N/V"}%, public ${item.publicHolding || "N/V"}%`)
+      : [],
+    verification: [
+      "Verify latest shareholding quarter against company/exchange filing.",
+      "Check promoter pledge separately; holding percentage alone is not enough.",
+      "Confirm whether institutional categories overlap before calculating free float.",
+      "Review insider/SAST activity for material buying, selling, pledge creation or release."
+    ]
+  };
+}
+
+function extractNewsItems(text: string) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[A-Z0-9-]+\s*\|/.test(line) && !/^NSEcode\s*\|/i.test(line))
+    .slice(0, 8)
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+      const date = parts[15] ? parts[15].slice(0, 10) : "Undated/Unverified";
+      const title = packetSafeText(parts[16] || parts[9] || parts[0]);
+      const summary = packetSafeText(parts[17] || "");
+      return {
+        date,
+        title: title || "Company update",
+        summary,
+        possibleInvestmentSignificance: "Classify as catalyst, risk, neutral update or routine disclosure after reading the filing/news item.",
+        verification: "Open the underlying announcement or company filing before using this in the final report."
+      };
+    })
+    .filter((item) => item.title && !looksLikeRawTrendlyneText(`${item.title} ${item.summary}`));
+}
+
+function extractCorporateEventItems(text: string) {
+  const items = extractNewsItems(text);
+  if (items.length) return items;
+  return cleanEvidenceText("Corporate events", text, 1400)
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^- /, "").trim())
+    .filter(Boolean)
+    .slice(0, 8)
+    .map((line) => ({
+      date: "Undated/Unverified",
+      title: packetSafeText(line),
+      summary: "",
+      possibleInvestmentSignificance: "Assess whether this changes earnings, capital allocation, governance or valuation.",
+      verification: "Check the latest company filing or corporate action notice."
+    }))
+    .filter((item) => item.title && !looksLikeRawTrendlyneText(item.title));
+}
+
+function buildEventEvidenceForPacket(intelligence?: TrendlyneIntelligenceRecord) {
+  if (!intelligence) {
+    return {
+      newsItems: [],
+      corporateEvents: [],
+      catalystFormattingRules: [
+        "Use only specific company events, not raw table rows.",
+        "Classify each item as earnings catalyst, order/customer catalyst, corporate action, governance event, risk event or neutral disclosure.",
+        "Tie every catalyst to timing, investment significance and what would confirm or disprove it."
+      ]
+    };
+  }
+
+  return {
+    newsItems: extractNewsItems(intelligence.news),
+    corporateEvents: extractCorporateEventItems(intelligence.events),
+    documentsToReview: extractDocumentRows(intelligence.documents),
+    catalystFormattingRules: [
+      "Summarize events in plain investment language.",
+      "Do not quote raw table headers, URLs, provider names or connector fields.",
+      "Use catalysts only when they can change revenue, margin, ROCE, cash flow, governance, valuation or market perception."
+    ]
+  };
+}
+
+function buildPriceMarketCapSanity(company: Company, record?: FundamentalsRecord) {
+  const m = metricSet(company, record);
+  const price = asNumber(m.currentPrice);
+  const marketCap = asNumber(m.marketCap);
+  const profit = asNumber(m.profit);
+  const eps = asNumber(m.eps);
+  const pe = asNumber(m.pe);
+  const impliedSharesFromMarket = price && marketCap ? marketCap / price : 0;
+  const impliedSharesFromEarnings = profit && eps ? profit / eps : 0;
+  const impliedEpsFromPe = price && pe ? price / pe : 0;
+  const perShareMismatch = hasPerShareMismatch(company, record);
+  const shareCountMismatch = hasShareCountMismatch(company, record);
+
+  return {
+    currentPriceInr: m.currentPrice || "",
+    marketCapInrCr: m.marketCap || "",
+    reportedEpsInr: m.eps || "",
+    reportedPe: m.pe || "",
+    impliedSharesFromMarketCapCr: impliedSharesFromMarket ? formatNumber(impliedSharesFromMarket, 2) : "",
+    impliedSharesFromProfitAndEpsCr: impliedSharesFromEarnings ? formatNumber(impliedSharesFromEarnings, 2) : "",
+    impliedEpsFromPriceAndPe: impliedEpsFromPe ? formatNumber(impliedEpsFromPe, 2) : "",
+    status: perShareMismatch || shareCountMismatch ? "requires reconciliation before valuation" : "passes first-level arithmetic check",
+    actionRequired:
+      perShareMismatch || shareCountMismatch
+        ? "Check corporate actions, split/bonus adjustments, consolidated vs standalone profit, trailing vs quarterly EPS and stale quote timing."
+        : "Still verify latest price and market cap before final publication."
+  };
+}
+
+function buildFilingVerificationChecklist(company: Company, record?: FundamentalsRecord, shareholding?: ShareholdingRecord, intelligence?: TrendlyneIntelligenceRecord) {
+  const review = dataQualityReview(company, record, intelligence);
+  return [
+    {
+      priority: "P0",
+      check: "Latest annual report and latest quarterly result",
+      status: record?.reportDate ? "partially available" : "missing",
+      why: "Revenue, PAT, EPS, margins, ROE/ROCE and debt must be tied to a named period before final numbers are used."
+    },
+    {
+      priority: "P0",
+      check: "Price, EPS, P/E and market-cap reconciliation",
+      status: review.perShareMismatch || review.shareCountMismatch || review.peInvalid ? "failed or incomplete" : "passes first-level check",
+      why: "Prevents impossible valuation scenarios and misleading implied prices."
+    },
+    {
+      priority: "P0",
+      check: "Cash-flow statement",
+      status: review.cfoInvalid || !metricSet(company, record).cfo ? "needs verification" : "available but verify period",
+      why: "Confirms whether reported profit converts to operating cash."
+    },
+    {
+      priority: "P0",
+      check: "Latest shareholding pattern and pledge status",
+      status: shareholding || metricSet(company, record).promoterHolding ? "partially available" : "missing",
+      why: "Promoter alignment, pledge risk and institutional ownership must be verified from latest filing."
+    },
+    {
+      priority: "P1",
+      check: "Exceptional items, one-off gains/losses and base effects",
+      status: hasExceptionalContext(intelligence) ? "possible context found" : "not found in saved evidence",
+      why: "Large profit changes should not be misclassified as structural without adjustment."
+    },
+    {
+      priority: "P1",
+      check: "Segment and end-market evidence",
+      status: review.conglomerateNeedsSegments ? "required before final verdict" : "required for richer report",
+      why: "Business quality depends on which segment is creating growth and margin."
+    },
+    {
+      priority: "P1",
+      check: "Recent announcements, orders, corporate actions and governance events",
+      status: intelligence ? "available for review" : "missing",
+      why: "Converts news into catalysts, risks or neutral items."
+    }
+  ];
+}
+
+function buildCodexVerificationChecklist(
+  company: Company,
+  record?: FundamentalsRecord,
+  shareholding?: ShareholdingRecord,
+  intelligence?: TrendlyneIntelligenceRecord
+) {
+  const review = dataQualityReview(company, record, intelligence);
+  return {
+    beforeWritingVerdict: [
+      "Confirm what the company actually does, including products, customers, end-markets and segment economics.",
+      "Use only period-labelled numbers in the main financial table.",
+      "Run price/market-cap/EPS/P/E reconciliation before valuation.",
+      "Check whether profit growth or decline is affected by exceptional items, one-off charges, tax effects or base effects.",
+      "If evidence is incomplete, still write the business analysis but reduce confidence and specify real-world diligence required."
+    ],
+    p0MustVerify: [
+      ...review.p0,
+      "Latest reported revenue, PAT, EPS and margin period.",
+      "Current market price and market capitalisation.",
+      "Cash-flow statement and working-capital movement.",
+      "Latest shareholding pattern, pledge and promoter-group changes."
+    ],
+    p1ShouldVerify: [
+      ...review.p1,
+      "Segment-level revenue and margin drivers.",
+      "Recent announcements that could change earnings or governance.",
+      "Peer valuation and reverse-DCF assumptions.",
+      "Management commentary, concall transcript and auditor notes."
+    ],
+    finalReportGuardrails: [
+      "Final report must be stock-only and must not mention data providers, connector names, raw payloads or app internals.",
+      "Do not leave sections blank; if hard evidence is weak, write a lower-confidence but complete investment view.",
+      "Do not create bull-case implied prices from unchecked EPS or multiple assumptions.",
+      "Do not call a stock a trap without explaining whether the trap is valuation, governance, accounting, debt, execution or cyclicality."
+    ],
+    filingVerificationChecklist: buildFilingVerificationChecklist(company, record, shareholding, intelligence)
+  };
+}
+
 function buildOwnershipForPacket(company: Company, record?: FundamentalsRecord, shareholding?: ShareholdingRecord, intelligence?: TrendlyneIntelligenceRecord) {
+  const ownershipTable = buildOwnershipTableForPacket(company, record, shareholding);
   return {
     latest: ownershipLines(company, record),
+    ownershipTable: ownershipTable.ownershipTable,
     exchangeFiling: shareholding
       ? {
           asOnDate: shareholding.asOnDate || "Undated/Unverified",
@@ -1711,13 +2066,17 @@ function buildOwnershipForPacket(company: Company, record?: FundamentalsRecord, 
           history: shareholding.history.slice(0, 8)
         }
       : null,
+    exchangeFilingHistory: ownershipTable.exchangeFilingHistory,
+    trendSummary: ownershipTable.trendSummary,
     trend: intelligence ? cleanEvidenceText("Ownership", intelligence.shareholding, 1200) : "",
     insiderSast: intelligence ? cleanEvidenceText("Insider / SAST", intelligence.sast, 1000) : "",
-    bulkBlockDeals: intelligence ? cleanEvidenceText("Bulk and block deals", intelligence.bulkBlock, 1000) : ""
+    bulkBlockDeals: intelligence ? cleanEvidenceText("Bulk and block deals", intelligence.bulkBlock, 1000) : "",
+    verification: ownershipTable.verification
   };
 }
 
 function buildIntelligenceDigest(intelligence?: TrendlyneIntelligenceRecord) {
+  const eventEvidence = buildEventEvidenceForPacket(intelligence);
   if (!intelligence) {
     return {
       overview: "",
@@ -1734,9 +2093,9 @@ function buildIntelligenceDigest(intelligence?: TrendlyneIntelligenceRecord) {
   return {
     overview: cleanEvidenceText("Overview and DVM", intelligence.overview, 1400),
     technicals: cleanEvidenceText("Technicals", intelligence.technical, 1000),
-    news: extractNewsRows(intelligence.news),
-    corporateEvents: cleanEvidenceText("Corporate events", intelligence.events, 1200),
-    documents: extractDocumentRows(intelligence.documents),
+    news: eventEvidence.newsItems,
+    corporateEvents: eventEvidence.corporateEvents,
+    documents: eventEvidence.documentsToReview || extractDocumentRows(intelligence.documents),
     ownership: cleanEvidenceText("Ownership", intelligence.shareholding, 1200),
     insiderSast: cleanEvidenceText("Insider / SAST", intelligence.sast, 1000),
     bulkBlockDeals: cleanEvidenceText("Bulk and block deals", intelligence.bulkBlock, 1000)
@@ -1764,6 +2123,9 @@ function packetSafeLabel(value: string) {
     .replace(/^Trendlyne\s+/i, "")
     .replace(/\bTrendlyne\b/gi, "Market intelligence")
     .replace(/\bNSE\b/gi, "Exchange")
+    .replace(/\bMCP\b/gi, "data")
+    .replace(/\bAPI\b/gi, "data feed")
+    .replace(/\bpayload\b/gi, "source text")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -1772,6 +2134,9 @@ function packetSafeText(value: string) {
   return scrubReportText(value)
     .replace(/\bTrendlyne\b/gi, "market intelligence")
     .replace(/\bNSE\b/gi, "exchange")
+    .replace(/\bMCP\b/gi, "data")
+    .replace(/\bAPI\b/gi, "data feed")
+    .replace(/\bpayload\b/gi, "source text")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -1822,10 +2187,11 @@ function buildCleanCodexResearchPacket(
   const generatedAt = new Date().toISOString();
   const review = dataQualityReview(company, fundamentalsRecord, trendlyneIntel);
   const cleanIntelligence = buildIntelligenceDigest(trendlyneIntel);
+  const eventEvidence = buildEventEvidenceForPacket(trendlyneIntel);
 
   return {
     packetType: "IMRS_CODEX_RESEARCH_PACKET",
-    version: "2.0",
+    version: "2.1",
     generatedAt,
     purpose:
       "Provide a clean, analyst-ready evidence packet for Codex to create an institutional-grade, stock-only research report.",
@@ -1859,14 +2225,21 @@ function buildCleanCodexResearchPacket(
         }
       }
     },
+    verificationPlan: {
+      codexMustVerify: buildCodexVerificationChecklist(company, fundamentalsRecord, shareholdingRecord, trendlyneIntel),
+      priceMarketCapSanity: buildPriceMarketCapSanity(company, fundamentalsRecord),
+      filingVerification: buildFilingVerificationChecklist(company, fundamentalsRecord, shareholdingRecord, trendlyneIntel)
+    },
     financialMetrics: buildMetricsForPacket(company, fundamentalsRecord),
+    financialTables: buildFinancialTablesForPacket(company, fundamentalsRecord),
     ownership: buildOwnershipForPacket(company, fundamentalsRecord, shareholdingRecord, trendlyneIntel),
     marketAndEventEvidence: {
       dvmAndOverview: cleanIntelligence.overview,
       technicals: cleanIntelligence.technicals,
       news: cleanIntelligence.news,
       corporateEvents: cleanIntelligence.corporateEvents,
-      documentsToReview: cleanIntelligence.documents
+      documentsToReview: cleanIntelligence.documents,
+      catalystFormattingRules: eventEvidence.catalystFormattingRules
     },
     savedResearchNotes: buildSavedNotesForPacket(company, fundamentalsRecord),
     riskRegister: meaningfulRisks(company).map((risk) => ({
@@ -1881,8 +2254,16 @@ function buildCleanCodexResearchPacket(
       status: catalyst.status,
       evidenceOrMilestone: packetSafeText(catalyst.notes) || packetSafeLabel(catalyst.notes)
     })),
-    documents: company.documents,
-    quarterlyReviews: company.reviews
+    documents: company.documents.map((document) => ({
+      name: packetSafeLabel(document.name),
+      type: packetSafeLabel(document.type),
+      status: packetSafeLabel(document.status)
+    })),
+    quarterlyReviews: company.reviews.map((review) => ({
+      quarter: packetSafeLabel(review.quarter),
+      verdict: packetSafeLabel(review.verdict),
+      notes: packetSafeText(review.notes)
+    }))
   };
 }
 
@@ -1971,9 +2352,9 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
       ? clampScore((financialStrength + ratioScore(record.cfo, 1, 0)) / 2 + 1)
       : company.scores.cashFlowQuality;
   const trendlyneDocuments: Company["documents"] = [
-    { name: "Trendlyne overview and DVM", type: "Other", status: "Key Source" },
-    { name: "Trendlyne ownership and SAST", type: "Exchange Filing", status: "Key Source" },
-    { name: "Trendlyne document search", type: "Other", status: "To Review" }
+    { name: "Market overview and quality scores", type: "Other", status: "Key Source" },
+    { name: "Ownership and insider activity", type: "Exchange Filing", status: "Key Source" },
+    { name: "Company document search", type: "Other", status: "To Review" }
   ];
   const cleanNews = cleanTrendlyneIntel("News and announcements", intelligence.news);
   const cleanEvents = cleanTrendlyneIntel("Corporate events", intelligence.events);
@@ -1982,7 +2363,7 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
   const trendlyneCatalysts: Company["catalysts"] = [];
   if (hasMeaningfulText(cleanNews)) {
     trendlyneCatalysts.push({
-      title: "Trendlyne news and announcements review",
+      title: "News and announcements review",
       date: "",
       status: "In Progress",
       notes: compactText(cleanNews, 260)
@@ -1990,7 +2371,7 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
   }
   if (hasMeaningfulText(cleanEvents)) {
     trendlyneCatalysts.push({
-      title: "Trendlyne corporate events review",
+      title: "Corporate events review",
       date: "",
       status: "Expected",
       notes: compactText(cleanEvents, 260)
@@ -1999,7 +2380,7 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
   const trendlyneRisks: Company["risks"] = [];
   if (/below|negative|weak|volatility/i.test(intelligence.technical)) {
     trendlyneRisks.push({
-      title: "Trendlyne technical weakness",
+      title: "Technical weakness",
       probability: "Medium",
       impact: "Medium",
       mitigation: compactText(cleanTechnical, 220)
@@ -2007,7 +2388,7 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
   }
   if (/pledge|disposal|sell|sast|insider/i.test(intelligence.sast)) {
     trendlyneRisks.push({
-      title: "Trendlyne insider/SAST watch",
+      title: "Insider/SAST watch",
       probability: "Medium",
       impact: "High",
       mitigation: compactText(cleanSast, 220)
@@ -2071,7 +2452,7 @@ function enrichWithTrendlyne(company: Company, record: FundamentalsRecord, intel
   return {
     ...aiOutputCompany,
     status: company.status === "Watchlist" ? "Researching" : company.status,
-    dataSource: `${company.dataSource || "Company search"} + Trendlyne MCP (${new Date(intelligence.importedAt).toISOString().slice(0, 10)})`,
+    dataSource: `${company.dataSource || "Company search"} + Market data sync (${new Date(intelligence.importedAt).toISOString().slice(0, 10)})`,
     aiPrompt: setIfDraft(company.aiPrompt, buildAnalystPrompt(company)),
     aiOutput: company.aiOutput,
     documents: mergeDocuments(company.documents, trendlyneDocuments),
