@@ -52,6 +52,15 @@ export type ScoringRationalePacket = {
   scorecardRationale: Array<{ factor: string; score: number; rationale: string }>;
 };
 
+export type CriticalMetricSummary = {
+  available: number;
+  verifiedOrDerived: number;
+  missing: string[];
+  unverified: string[];
+  readyForPrimaryTable: string[];
+  mustVerifyBeforeUse: string[];
+};
+
 type MetricInput = {
   key: keyof CriticalMetrics;
   label: string;
@@ -161,6 +170,27 @@ export function buildCriticalMetrics(record: MetricRecord, source: MetricSource 
 
 export function normalizeTrendlyneToProvenance(record: MetricRecord): CriticalMetrics {
   return buildCriticalMetrics(record, "trendlyne", String(record.importedAt || ""));
+}
+
+export function summarizeCriticalMetrics(metrics: CriticalMetrics): CriticalMetricSummary {
+  const values = Object.values(metrics);
+  const ready = values.filter((item) => {
+    const hasCoreFields = Boolean(item.value && item.unit && item.source && (item.period || item.asOf));
+    return hasCoreFields && ["verified", "derived"].includes(item.confidence);
+  });
+  const missing = values.filter((item) => !item.value || item.confidence === "missing").map((item) => item.label);
+  const unverified = values
+    .filter((item) => item.value && !["verified", "derived"].includes(item.confidence))
+    .map((item) => item.label);
+
+  return {
+    available: values.length - missing.length,
+    verifiedOrDerived: ready.length,
+    missing,
+    unverified,
+    readyForPrimaryTable: ready.map((item) => item.label),
+    mustVerifyBeforeUse: [...missing, ...unverified]
+  };
 }
 
 export function buildSegmentAnalysisPacket(input: { companyName: string; sector: string; businessSummary: string; industryOpportunity: string }): SegmentAnalysisPacket {

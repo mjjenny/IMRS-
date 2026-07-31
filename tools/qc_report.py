@@ -317,6 +317,44 @@ def check_provenance(payload: dict[str, object], errors: list[str], warnings: li
       warnings.append(f"Metric '{key}' has no period/as-of date; keep it out of primary report tables.")
 
 
+def check_declared_quality_blocks(payload: dict[str, object], errors: list[str], warnings: list[str]) -> None:
+  report_quality = payload.get("reportQualityRules")
+  if not isinstance(report_quality, dict):
+    return
+
+  if report_quality.get("requireUsableMetricSummary"):
+    summary = payload.get("criticalMetricSummary")
+    if not isinstance(summary, dict):
+      errors.append("Missing criticalMetricSummary despite requireUsableMetricSummary=true.")
+    else:
+      for field in ["available", "verifiedOrDerived", "readyForPrimaryTable", "mustVerifyBeforeUse"]:
+        if field not in summary:
+          errors.append(f"criticalMetricSummary is missing field: {field}")
+      ready = summary.get("readyForPrimaryTable")
+      if isinstance(ready, list) and len(ready) < 6:
+        warnings.append("Fewer than six critical metrics are ready for primary tables; report confidence should be conservative.")
+
+  if report_quality.get("requireSegmentAnalysis"):
+    segment = payload.get("segmentAnalysis")
+    if not isinstance(segment, dict):
+      errors.append("Missing segmentAnalysis despite requireSegmentAnalysis=true.")
+    else:
+      for field in ["required", "status", "knownSegments", "codexMustAnalyze"]:
+        if field not in segment:
+          errors.append(f"segmentAnalysis is missing field: {field}")
+      if segment.get("required") is True and segment.get("status") == "required":
+        warnings.append("Segment analysis is marked required but incomplete; final verdict must be cautious.")
+
+  if report_quality.get("requireScoreExplanation"):
+    rationale = payload.get("scoringRationale")
+    if not isinstance(rationale, dict):
+      errors.append("Missing scoringRationale despite requireScoreExplanation=true.")
+      return
+    for field in ["convictionScoreBasis", "multibaggerScoreBasis", "trapRiskBasis", "scorecardRationale"]:
+      if not isinstance(rationale.get(field), list) or not rationale.get(field):
+        errors.append(f"scoringRationale requires non-empty list: {field}")
+
+
 def run_checks(path: Path, require_provenance: bool = False) -> CheckResult:
   errors: list[str] = []
   warnings: list[str] = []
@@ -334,6 +372,7 @@ def run_checks(path: Path, require_provenance: bool = False) -> CheckResult:
   check_valuation(markdown, errors, warnings)
   check_period_labelling(markdown, warnings)
   check_provenance(payload, errors, warnings, require_provenance)
+  check_declared_quality_blocks(payload, errors, warnings)
 
   return CheckResult(errors=errors, warnings=warnings)
 

@@ -83,6 +83,14 @@ Publish each report as `public/reports/<TICKER>.json` (UTF-8; a BOM is tolerated
       "notes": []
     }
   },
+  "criticalMetricSummary": {
+    "available": 0,
+    "verifiedOrDerived": 0,
+    "missing": [],
+    "unverified": [],
+    "readyForPrimaryTable": [],
+    "mustVerifyBeforeUse": []
+  },
   "segmentAnalysis": {
     "required": true,
     "status": "partial",

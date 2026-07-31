@@ -13,6 +13,7 @@
     "packet:stage": "powershell -ExecutionPolicy Bypass -File tools/stage_latest_packet.ps1",
     "packet:bridge": "node tools/codex_packet_bridge.mjs",
     "bse:pdf": "python tools/extract_bse_pdf_financials.py",
+    "bse:filing": "python tools/extract_bse_pdf_financials.py",
     "smoke": "node tools/smoke_check.mjs"
   },
   "dependencies": {

@@ -217,6 +217,10 @@ h2 {
   padding-bottom: 4pt;
 }
 
+h2:nth-of-type(n+4) {
+  break-before: auto;
+}
+
 h2:first-child {
   margin-top: 0;
 }
@@ -252,7 +256,7 @@ table {
   break-inside: auto;
   font-size: 8.3pt;
   line-height: 1.34;
-  margin: 8pt 0 11pt;
+  margin: 8pt 0 12pt;
   table-layout: fixed;
   width: 100%;
 }
@@ -266,9 +270,10 @@ tr {
 }
 
 th {
-  background: #0b7259;
+  background: #083d31;
   color: #ffffff;
   font-weight: 800;
+  letter-spacing: 0.1pt;
 }
 
 td {
@@ -282,9 +287,13 @@ tbody tr:nth-child(even) td {
 th, td {
   border: 0.45pt solid #c6d8d0;
   overflow-wrap: anywhere;
-  padding: 5pt 5.5pt;
+  padding: 5.3pt 5.7pt;
   text-align: left;
   vertical-align: top;
+}
+
+table + p {
+  margin-top: 2pt;
 }
 """
 

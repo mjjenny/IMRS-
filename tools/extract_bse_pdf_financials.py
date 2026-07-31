@@ -22,6 +22,9 @@ LABEL_ALIASES = {
   "opm": ["operating margin", "ebitda margin"],
   "financeCost": ["finance costs", "interest expense"],
   "cashFlowFromOperations": ["net cash from operating activities", "cash flow from operating activities"],
+  "totalDebt": ["borrowings", "total debt", "debt securities"],
+  "netWorth": ["net worth", "total equity", "equity attributable"],
+  "segmentRevenue": ["segment revenue", "revenue by segment"],
 }
 
 PERIOD_RE = re.compile(r"(?i)\b(quarter ended|year ended|half year ended|nine months ended)\s+([0-9]{1,2}\s+[A-Za-z]+\s+[0-9]{4}|[0-9]{2}[-/][0-9]{2}[-/][0-9]{4})")
@@ -47,6 +50,19 @@ def load_pdf_text(path: Path) -> tuple[str, list[str]]:
   if not chunks:
     warnings.append("No extractable text found; OCR may be required.")
   return "\n".join(chunks), warnings
+
+
+def load_text_filing(path: Path) -> tuple[str, list[str]]:
+  text = path.read_text(encoding="utf-8-sig", errors="replace")
+  text = re.sub(r"<[^>]+>", " ", text)
+  text = re.sub(r"\s+", " ", text)
+  return text, ["Text/XBRL-style filing parsed with conservative text extraction; verify labels and units before use."]
+
+
+def load_filing_text(path: Path) -> tuple[str, list[str]]:
+  if path.suffix.lower() == ".pdf":
+    return load_pdf_text(path)
+  return load_text_filing(path)
 
 
 def infer_period(text: str) -> str:
@@ -77,7 +93,7 @@ def extract_metric(text: str, aliases: list[str]) -> dict[str, Any]:
 
 
 def extract(path: Path) -> dict[str, Any]:
-  text, warnings = load_pdf_text(path)
+  text, warnings = load_filing_text(path)
   period = infer_period(text)
   metrics: dict[str, Any] = {}
   for key, aliases in LABEL_ALIASES.items():
@@ -96,7 +112,7 @@ def extract(path: Path) -> dict[str, Any]:
     warnings.append("No financial metric candidates were extracted.")
 
   return {
-    "schema": "IMRS_BSE_PDF_EXTRACTION_V1",
+    "schema": "IMRS_BSE_FILING_EXTRACTION_V2",
     "sourceFile": str(path),
     "period": period,
     "metrics": metrics,

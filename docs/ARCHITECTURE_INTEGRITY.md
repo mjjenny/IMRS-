@@ -12,6 +12,8 @@ IMRS is a Next.js App Router application. The browser app is currently concentra
 - `app/api/trendlyne`: market-intelligence connector.
 - `tools/qc_report.py`: strict stock-only report quality gate.
 - `tools/render_report_pdf.py`: premium PDF rendering.
+- `tools/publish_report.ps1`: report QC, PDF rendering and optional commit/push.
+- `tools/extract_bse_pdf_financials.py`: conservative BSE PDF/text/XBRL-style filing extraction into candidate metrics for verification.
 - `tools/codex_packet_bridge.mjs`: local packet bridge from browser to Codex inbox.
 - `public/reports`: published final stock-only reports.
 
@@ -20,9 +22,10 @@ IMRS is a Next.js App Router application. The browser app is currently concentra
 1. Final reports must pass `npm run report:qc -- public/reports/<TICKER>.json --strict`.
 2. Report-only publishing should use `npm run report:publish -- --Report public/reports/<TICKER>.json -Commit -Push`; this runs report QC and PDF rendering without rebuilding the app.
 3. App changes must pass `npm run lint`, `npm run build` and `npm run smoke`.
-3. Reader-facing reports must not mention provider names, connector internals, parsing issues or raw data fragments.
-4. Imported evidence can be incomplete; final reports must translate evidence quality into investment judgement, not data-pipeline narration.
-5. Do not expand `app/page.tsx` with new major workflows. New work should move toward small components and helpers.
+4. Reader-facing reports must not mention provider names, connector internals, parsing issues or raw data fragments.
+5. Imported evidence can be incomplete; final reports must translate evidence quality into investment judgement, not data-pipeline narration.
+6. New rich packets should include `criticalMetrics`, `criticalMetricSummary`, `segmentAnalysis`, `scoringRationale` and `evidenceQualityBoard`.
+7. Do not expand `app/page.tsx` with new major workflows. New work should move toward small components and helpers.
 
 ## Refactor target
 

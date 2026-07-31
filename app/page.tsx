@@ -16,6 +16,7 @@ import {
   buildCriticalMetrics,
   buildScoringRationalePacket,
   buildSegmentAnalysisPacket,
+  summarizeCriticalMetrics,
   type MetricSource
 } from "./lib/provenance";
 
@@ -2068,6 +2069,45 @@ function buildCodexVerificationChecklist(
   };
 }
 
+function buildEvidenceQualityBoard(
+  company: Company,
+  record?: FundamentalsRecord,
+  shareholding?: ShareholdingRecord,
+  intelligence?: TrendlyneIntelligenceRecord
+) {
+  const review = dataQualityReview(company, record, intelligence);
+  const m = metricSet(company, record);
+  const period = metricPeriod(record);
+  const sourceRows = sourceCoverageRows(company, record, intelligence).map(([source, status]) => ({ source, status }));
+  const hasCoreFinancials = Boolean(m.revenue && m.profit && (m.eps || m.pe));
+  const hasReturnRatios = Boolean(m.roe || m.roce);
+  const hasOwnership = Boolean(shareholding || m.promoterHolding || m.fiiHolding || m.diiHolding);
+  const hasEvents = Boolean(intelligence && (extractNewsItems(intelligence.news).length || extractCorporateEventItems(intelligence.events).length));
+
+  return {
+    status: review.p0.length ? "blocked-until-reconciled" : hasCoreFinancials ? "usable-with-verification" : "incomplete",
+    period,
+    coverage: {
+      coreFinancials: hasCoreFinancials ? "available" : "missing-or-thin",
+      returnRatios: hasReturnRatios ? "available" : "missing-or-thin",
+      ownership: hasOwnership ? "available" : "missing-or-thin",
+      recentEvents: hasEvents ? "available" : "missing-or-thin",
+      segmentEvidence: review.conglomerateNeedsSegments ? "mandatory" : "verify"
+    },
+    sourceRows,
+    mustNotUseBlindly: [
+      "Any metric without a period, unit or confidence level.",
+      "Any EPS/P/E valuation output that fails price, EPS and market-cap reconciliation.",
+      "Any operating cash-flow figure that is too small for company scale or lacks cash-flow-statement basis.",
+      "Any ownership category where institutional buckets may overlap."
+    ],
+    reportImplication:
+      review.p0.length
+        ? "Write analysis, but withhold final valuation confidence until P0 checks are reconciled."
+        : "Use the evidence pack to write a full stock-only report, while explicitly reflecting weaker evidence as lower conviction."
+  };
+}
+
 function buildOwnershipForPacket(company: Company, record?: FundamentalsRecord, shareholding?: ShareholdingRecord, intelligence?: TrendlyneIntelligenceRecord) {
   const ownershipTable = buildOwnershipTableForPacket(company, record, shareholding);
   return {
@@ -2229,10 +2269,11 @@ function buildCleanCodexResearchPacket(
   const cleanIntelligence = buildIntelligenceDigest(trendlyneIntel);
   const eventEvidence = buildEventEvidenceForPacket(trendlyneIntel);
   const provenanceInput = buildProvenanceInput(company, fundamentalsRecord, shareholdingRecord);
+  const criticalMetrics = buildCriticalMetrics(provenanceInput, provenanceSource(fundamentalsRecord), provenanceInput.importedAt);
 
   return {
     packetType: "IMRS_CODEX_RESEARCH_PACKET",
-    version: "2.3",
+    version: "2.4",
     generatedAt,
     purpose:
       "Provide a clean, analyst-ready evidence packet for Codex to create an institutional-grade, stock-only research report.",
@@ -2294,7 +2335,9 @@ function buildCleanCodexResearchPacket(
       priceMarketCapSanity: buildPriceMarketCapSanity(company, fundamentalsRecord),
       filingVerification: buildFilingVerificationChecklist(company, fundamentalsRecord, shareholdingRecord, trendlyneIntel)
     },
-    criticalMetrics: buildCriticalMetrics(provenanceInput, provenanceSource(fundamentalsRecord), provenanceInput.importedAt),
+    evidenceQualityBoard: buildEvidenceQualityBoard(company, fundamentalsRecord, shareholdingRecord, trendlyneIntel),
+    criticalMetrics,
+    criticalMetricSummary: summarizeCriticalMetrics(criticalMetrics),
     segmentAnalysis: buildSegmentAnalysisPacket({
       companyName: company.name,
       sector: inferredSector(company, fundamentalsRecord),
@@ -2307,6 +2350,8 @@ function buildCleanCodexResearchPacket(
       requireSegmentAnalysis: true,
       requireScoringRationale: true,
       suppressUnprovenMetricsFromPrimaryTables: true,
+      requireUsableMetricSummary: true,
+      requireScoreExplanation: true,
       stockOnlyReaderFacingOutput: true
     },
     financialMetrics: buildMetricsForPacket(company, fundamentalsRecord),
