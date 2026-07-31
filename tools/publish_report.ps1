@@ -4,6 +4,7 @@ param(
 
   [switch]$SkipPdf,
   [switch]$SkipBuild,
+  [switch]$FullBuild,
   [switch]$Commit,
   [switch]$Push,
   [string]$Message
@@ -29,10 +30,12 @@ if (-not $SkipPdf) {
   python tools/render_report_pdf.py $reportPath.Path $pdfPath
 }
 
-if (-not $SkipBuild) {
+if ($FullBuild -and -not $SkipBuild) {
   Write-Host "Checking application quality..."
   npm run lint
   npm run build
+} else {
+  Write-Host "Skipping full app lint/build for report-only publish. Use -FullBuild after app-code changes."
 }
 
 if ($Commit) {

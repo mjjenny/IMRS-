@@ -18,7 +18,8 @@ IMRS is a Next.js App Router application. The browser app is currently concentra
 ## Change rules
 
 1. Final reports must pass `npm run report:qc -- public/reports/<TICKER>.json --strict`.
-2. App changes must pass `npm run lint`, `npm run build` and `npm run smoke`.
+2. Report-only publishing should use `npm run report:publish -- --Report public/reports/<TICKER>.json -Commit -Push`; this runs report QC and PDF rendering without rebuilding the app.
+3. App changes must pass `npm run lint`, `npm run build` and `npm run smoke`.
 3. Reader-facing reports must not mention provider names, connector internals, parsing issues or raw data fragments.
 4. Imported evidence can be incomplete; final reports must translate evidence quality into investment judgement, not data-pipeline narration.
 5. Do not expand `app/page.tsx` with new major workflows. New work should move toward small components and helpers.

@@ -2260,7 +2260,7 @@ function buildCleanCodexResearchPacket(
       expectedPromptFile: "tmp/codex-inbox/latest-prompt.txt",
       finalReportTarget: `public/reports/${safeFileName(externalLookupTicker(company.ticker) || company.ticker || company.name)}.json`,
       publishInstruction:
-        "Generate a complete final stock-only institutional research report, run report QC/build checks, commit the JSON report and push to GitHub."
+        "Generate a complete final stock-only institutional research report. For report-only publishing, run strict report QC and PDF rendering, commit the JSON report and push to GitHub. Run full app lint/build only when application code changed."
     },
     evidenceSummary: {
       sourceCoverage: sourceCoverageRows(company, fundamentalsRecord, trendlyneIntel).map(([source, status]) => ({ source, status })),

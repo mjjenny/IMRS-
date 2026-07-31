@@ -9,6 +9,7 @@
     "lint": "eslint . --max-warnings=0",
     "report:qc": "python tools/qc_report.py",
     "report:publish": "powershell -ExecutionPolicy Bypass -File tools/publish_report.ps1",
+    "report:publish:full": "powershell -ExecutionPolicy Bypass -File tools/publish_report.ps1 -FullBuild",
     "packet:stage": "powershell -ExecutionPolicy Bypass -File tools/stage_latest_packet.ps1",
     "packet:bridge": "node tools/codex_packet_bridge.mjs",
     "bse:pdf": "python tools/extract_bse_pdf_financials.py",
