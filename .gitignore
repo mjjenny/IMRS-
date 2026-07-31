@@ -8,5 +8,6 @@ dist
 *.log
 __pycache__/
 *.pyc
+tmp/
 trendlyne-*-sample.json
 report-output/
