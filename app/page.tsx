@@ -160,6 +160,20 @@ type FundamentalsRecord = {
   dvmValuation: string;
   dvmMomentum: string;
   analystScore: string;
+  filingDate?: string;
+  xbrlUrl?: string;
+  financialYear?: string;
+  industry?: string;
+  sector?: string;
+  isin?: string;
+  bseCode?: string;
+  filingEvidence?: unknown;
+  extractionWarnings?: string[];
+  sourceQuality?: {
+    primary?: string;
+    machineReadableFilingFetched?: boolean;
+    metricCandidateCount?: number;
+  };
 };
 
 type ShareholdingRecord = {
@@ -563,8 +577,10 @@ function normalizeCompany(raw: Partial<Company>): Company {
   };
 }
 
-function metricValue(company: Company, record: FundamentalsRecord | undefined, key: keyof Financials) {
-  return record?.[key as keyof FundamentalsRecord] || company.financials[key];
+function metricValue(company: Company, record: FundamentalsRecord | undefined, key: keyof Financials): string {
+  const recordValue = record?.[key as keyof FundamentalsRecord];
+  const companyValue = company.financials[key];
+  return typeof recordValue === "string" && recordValue ? recordValue : typeof companyValue === "string" ? companyValue : "";
 }
 
 function metricSet(company: Company, record?: FundamentalsRecord) {
@@ -2083,6 +2099,7 @@ function buildEvidenceQualityBoard(
   const hasReturnRatios = Boolean(m.roe || m.roce);
   const hasOwnership = Boolean(shareholding || m.promoterHolding || m.fiiHolding || m.diiHolding);
   const hasEvents = Boolean(intelligence && (extractNewsItems(intelligence.news).length || extractCorporateEventItems(intelligence.events).length));
+  const filingCandidateCount = record?.sourceQuality?.metricCandidateCount || 0;
 
   return {
     status: review.p0.length ? "blocked-until-reconciled" : hasCoreFinancials ? "usable-with-verification" : "incomplete",
@@ -2092,7 +2109,11 @@ function buildEvidenceQualityBoard(
       returnRatios: hasReturnRatios ? "available" : "missing-or-thin",
       ownership: hasOwnership ? "available" : "missing-or-thin",
       recentEvents: hasEvents ? "available" : "missing-or-thin",
-      segmentEvidence: review.conglomerateNeedsSegments ? "mandatory" : "verify"
+      segmentEvidence: review.conglomerateNeedsSegments ? "mandatory" : "verify",
+      machineReadableFiling:
+        record?.sourceQuality?.machineReadableFilingFetched
+          ? `available with ${filingCandidateCount} candidate metrics`
+          : "not captured or not parseable"
     },
     sourceRows,
     mustNotUseBlindly: [
@@ -2247,7 +2268,22 @@ function provenanceSource(record?: FundamentalsRecord): MetricSource {
 function buildProvenanceInput(company: Company, record?: FundamentalsRecord, shareholding?: ShareholdingRecord) {
   return {
     ...company.financials,
-    ...(record || {}),
+    revenue: record?.revenue || company.financials.revenue,
+    profit: record?.profit || company.financials.profit,
+    eps: record?.eps || company.financials.eps,
+    pe: record?.pe || company.financials.pe,
+    roe: record?.roe || company.financials.roe,
+    roce: record?.roce || company.financials.roce,
+    debtEquity: record?.debtEquity || company.financials.debtEquity,
+    salesGrowth: record?.salesGrowth || company.financials.salesGrowth,
+    profitGrowth: record?.profitGrowth || company.financials.profitGrowth,
+    opm: record?.opm || company.financials.opm,
+    cfo: record?.cfo || company.financials.cfo,
+    currentPrice: record?.currentPrice || company.financials.currentPrice,
+    dvmDurability: record?.dvmDurability || company.financials.dvmDurability,
+    dvmValuation: record?.dvmValuation || company.financials.dvmValuation,
+    dvmMomentum: record?.dvmMomentum || company.financials.dvmMomentum,
+    analystScore: record?.analystScore || company.financials.analystScore,
     marketCap: record?.marketCap || company.marketCap,
     promoterHolding: shareholding?.promoterHolding || record?.promoterHolding || company.financials.promoterHolding,
     fiiHolding: record?.fiiHolding || company.financials.fiiHolding,
@@ -2307,6 +2343,11 @@ function buildCleanCodexResearchPacket(
       sourceCoverage: sourceCoverageRows(company, fundamentalsRecord, trendlyneIntel).map(([source, status]) => ({ source, status })),
       sanityCheck: sanityCheckItems(company, fundamentalsRecord, trendlyneIntel),
       needsVerification: needsVerificationItems(company, fundamentalsRecord, trendlyneIntel),
+      filingExtraction: {
+        sourceQuality: fundamentalsRecord?.sourceQuality || null,
+        warnings: fundamentalsRecord?.extractionWarnings || [],
+        evidence: fundamentalsRecord?.filingEvidence || null
+      },
       dataQuality: {
         p0: review.p0,
         p1: review.p1,

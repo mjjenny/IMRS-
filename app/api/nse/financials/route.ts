@@ -1,4 +1,17 @@
 import { NextResponse } from "next/server";
+import {
+  deriveMetrics,
+  extractFromFilingText,
+  fetchFilingText,
+  formatMetric,
+  lakhsToCrore,
+  mergeCandidate,
+  mergeMetric,
+  metricCandidate,
+  numericValue,
+  type FilingMetricKey,
+  type FilingMetricCandidate
+} from "../../lib/filing-extraction";
 
 export const dynamic = "force-dynamic";
 
@@ -39,21 +52,6 @@ function parseDate(value = "") {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function asNumber(value: string | number | null | undefined) {
-  const numberValue = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(numberValue) ? numberValue : 0;
-}
-
-function formatNumber(value: number, decimals = 2) {
-  if (!Number.isFinite(value)) return "";
-  return value.toFixed(decimals).replace(/\.?0+$/, "");
-}
-
-function lakhsToCrore(value: string | number | null | undefined) {
-  const numberValue = asNumber(value);
-  return numberValue ? numberValue / 100 : 0;
-}
-
 async function nseFetch(url: string, cookies: string) {
   const response = await fetch(url, {
     headers: {
@@ -90,7 +88,7 @@ function lineItems(fields: ResultFields) {
   const revenue = lakhsToCrore(fields.re_net_sale || fields.re_total_inc);
   const profit = lakhsToCrore(fields.re_pl_own_par || fields.re_proloss_ord_act || fields.re_con_pro_loss);
   const operatingProfit = lakhsToCrore(fields.re_pro_bef_int_n_excep);
-  const eps = asNumber(fields.re_basic_eps_for_cont_dic_opr || fields.re_bsc_eps_bfr_exi || fields.re_basic_eps);
+  const eps = numericValue(fields.re_basic_eps_for_cont_dic_opr || fields.re_bsc_eps_bfr_exi || fields.re_basic_eps);
 
   return {
     revenue,
@@ -99,6 +97,16 @@ function lineItems(fields: ResultFields) {
     eps,
     opm: revenue ? (operatingProfit / revenue) * 100 : 0
   };
+}
+
+function apiCandidates(items: ReturnType<typeof lineItems>, period: string) {
+  const metrics: Partial<Record<FilingMetricKey, FilingMetricCandidate>> = {};
+  mergeCandidate(metrics, metricCandidate("revenue", "Revenue", items.revenue, "INR crore", period, "api-field", "high", "NSE financial result revenue"));
+  mergeCandidate(metrics, metricCandidate("profit", "Net profit", items.profit, "INR crore", period, "api-field", "high", "NSE financial result profit"));
+  mergeCandidate(metrics, metricCandidate("eps", "EPS", items.eps, "INR", period, "api-field", "high", "NSE financial result EPS"));
+  mergeCandidate(metrics, metricCandidate("operatingProfit", "Operating profit", items.operatingProfit, "INR crore", period, "api-field", "medium", "NSE financial result operating profit"));
+  deriveMetrics(metrics, period);
+  return metrics;
 }
 
 export async function GET(request: Request) {
@@ -139,6 +147,13 @@ export async function GET(request: Request) {
     const priorItems = prior ? lineItems(await fetchDetail(prior, cookies)) : undefined;
     const salesGrowth = priorItems?.revenue ? ((latestItems.revenue / priorItems.revenue) - 1) * 100 : 0;
     const profitGrowth = priorItems?.profit ? ((latestItems.profit / priorItems.profit) - 1) * 100 : 0;
+    const period = latest.toDate || latest.financialYear || "";
+    const xbrlText = await fetchFilingText(latest.xbrl || "");
+    const filingExtraction = xbrlText
+      ? extractFromFilingText(xbrlText, period)
+      : { period, metrics: {}, warnings: ["No machine-readable filing text could be fetched from the NSE record."] };
+    const metrics = { ...filingExtraction.metrics, ...apiCandidates(latestItems, period) };
+    deriveMetrics(metrics, period);
 
     return NextResponse.json({
       record: {
@@ -147,23 +162,30 @@ export async function GET(request: Request) {
         ticker: latest.symbol || symbol,
         source: "NSE annual financial results",
         importedAt: new Date().toISOString(),
-        reportDate: latest.toDate || latest.financialYear || "",
+        reportDate: period,
         marketCap: "",
-        revenue: formatNumber(latestItems.revenue, 0),
-        profit: formatNumber(latestItems.profit, 0),
-        eps: formatNumber(latestItems.eps),
+        revenue: mergeMetric(formatMetric(latestItems.revenue, 0), metrics.revenue, 0),
+        profit: mergeMetric(formatMetric(latestItems.profit, 0), metrics.profit, 0),
+        eps: mergeMetric(formatMetric(latestItems.eps), metrics.eps),
         pe: "",
-        roe: "",
+        roe: mergeMetric("", metrics.roe),
         roce: "",
-        debtEquity: "",
-        salesGrowth: salesGrowth ? formatNumber(salesGrowth) : "",
-        profitGrowth: profitGrowth ? formatNumber(profitGrowth) : "",
-        opm: latestItems.opm ? formatNumber(latestItems.opm) : "",
-        cfo: "",
+        debtEquity: mergeMetric("", metrics.debtEquity),
+        salesGrowth: salesGrowth ? formatMetric(salesGrowth) : "",
+        profitGrowth: profitGrowth ? formatMetric(profitGrowth) : "",
+        opm: mergeMetric(formatMetric(latestItems.opm), metrics.opm),
+        cfo: mergeMetric("", metrics.cfo, 0),
         currentPrice: "",
         filingDate: latest.filingDate || "",
         xbrlUrl: latest.xbrl || "",
-        financialYear: latest.financialYear || ""
+        financialYear: latest.financialYear || "",
+        filingEvidence: { ...filingExtraction, metrics },
+        extractionWarnings: filingExtraction.warnings,
+        sourceQuality: {
+          primary: "nse-api-fields",
+          machineReadableFilingFetched: Boolean(xbrlText),
+          metricCandidateCount: Object.keys(metrics).length
+        }
       }
     });
   } catch {

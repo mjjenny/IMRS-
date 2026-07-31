@@ -1,4 +1,11 @@
 import { NextResponse } from "next/server";
+import {
+  deriveMetrics,
+  extractFromFilingText,
+  fetchFilingText,
+  mergeMetric,
+  type FilingMetricKey
+} from "../../lib/filing-extraction";
 
 export const dynamic = "force-dynamic";
 
@@ -28,14 +35,8 @@ function clean(value: string | number | null | undefined) {
   return String(value).replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
 }
 
-function asNumber(value: string | number | null | undefined) {
-  const cleaned = clean(value).replace(/,/g, "");
-  const numberValue = Number(cleaned);
-  return Number.isFinite(numberValue) ? numberValue : 0;
-}
-
 function formatNumber(value: string | number | null | undefined, decimals = 2) {
-  const numberValue = asNumber(value);
+  const numberValue = Number(clean(value).replace(/,/g, ""));
   if (!numberValue) return "";
   return numberValue.toFixed(decimals).replace(/\.?0+$/, "");
 }
@@ -113,6 +114,16 @@ export async function GET(request: Request) {
     ]);
     const annualResult = latestAnnualResult(result.Data || "");
     const companyLabel = clean(header.SecurityId) || `BSE ${code}`;
+    const xbrlText = await fetchFilingText(annualResult.xbrlUrl);
+    const filingExtraction = xbrlText
+      ? extractFromFilingText(xbrlText, annualResult.reportDate || annualResult.year)
+      : {
+          period: annualResult.reportDate || annualResult.year,
+          metrics: {} as Partial<Record<FilingMetricKey, never>>,
+          warnings: ["No machine-readable filing text could be fetched from the BSE record."]
+        };
+    const metrics = filingExtraction.metrics;
+    deriveMetrics(metrics, filingExtraction.period);
 
     return NextResponse.json({
       record: {
@@ -123,18 +134,18 @@ export async function GET(request: Request) {
         importedAt: new Date().toISOString(),
         reportDate: annualResult.reportDate || annualResult.year,
         marketCap: "",
-        revenue: "",
-        profit: "",
+        revenue: mergeMetric("", metrics.revenue, 0),
+        profit: mergeMetric("", metrics.profit, 0),
         eps: formatNumber(header.EPS),
         pe: formatNumber(header.PE),
         roe: formatNumber(header.ROE),
         roce: "",
-        debtEquity: "",
+        debtEquity: mergeMetric("", metrics.debtEquity),
         promoterHolding: "",
         salesGrowth: "",
         profitGrowth: "",
-        opm: formatNumber(header.OPM),
-        cfo: "",
+        opm: mergeMetric(formatNumber(header.OPM), metrics.opm),
+        cfo: mergeMetric("", metrics.cfo, 0),
         currentPrice: formatNumber(price.CurrVal),
         fiiHolding: "",
         diiHolding: "",
@@ -149,7 +160,14 @@ export async function GET(request: Request) {
         industry: clean(header.Industry),
         sector: clean(header.Sector),
         isin: clean(header.ISIN),
-        bseCode: clean(header.SecurityCode) || code
+        bseCode: clean(header.SecurityCode) || code,
+        filingEvidence: filingExtraction,
+        extractionWarnings: filingExtraction.warnings,
+        sourceQuality: {
+          primary: "bse-header-and-filing",
+          machineReadableFilingFetched: Boolean(xbrlText),
+          metricCandidateCount: Object.keys(metrics).length
+        }
       }
     });
   } catch {
