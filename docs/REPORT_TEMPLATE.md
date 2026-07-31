@@ -28,6 +28,8 @@ Multibagger potential: <n> / 100
 Potential trap risk: <n> / 100
 ```
 
+Header fields must be plain text exactly in this style, not bold markdown such as `**Company:**`. The QC and premium PDF renderer use these header lines for score and cover-page extraction.
+
 The three scores are the analyst's own calibrated judgment (typical range 20-80; extremes need extraordinary evidence).
 
 ## Section structure (numbered, in this order)

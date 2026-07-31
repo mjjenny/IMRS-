@@ -36,9 +36,10 @@ const NSE_UNIVERSE_URL = "https://nsearchives.nseindia.com/content/equities/EQUI
 const BSE_UNIVERSE_URL =
   "https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w?Group=&Scripcode=&industry=&segment=Equity&status=Active";
 const UNIVERSE_TTL_MS = 24 * 60 * 60 * 1000;
+const PARTIAL_UNIVERSE_TTL_MS = 5 * 60 * 1000;
 const MAX_RESULTS = 20;
 
-let universeCache: { nseRows: UniverseRow[]; bseRows: UniverseRow[]; fetchedAt: number } | null = null;
+let universeCache: { nseRows: UniverseRow[]; bseRows: UniverseRow[]; fetchedAt: number; expiresAt: number } | null = null;
 
 const starterNotes: Record<string, { sector: string; note: string }> = {
   CDSL: { sector: "Capital Markets", note: "Depository infrastructure and capital-market participation play." },
@@ -81,6 +82,10 @@ function starterCompanies(): SearchResult[] {
     note: starterNotes[ticker]?.note || "",
     source: "IMRS starter directory"
   }));
+}
+
+function universeCacheFresh() {
+  return Boolean(universeCache && Date.now() < universeCache.expiresAt);
 }
 
 function parseCsvLine(line: string) {
@@ -159,7 +164,7 @@ function parseBseUniverse(rows: BseApiRow[]): UniverseRow[] {
 }
 
 async function loadNseUniverse(): Promise<UniverseRow[]> {
-  if (universeCache && Date.now() - universeCache.fetchedAt < UNIVERSE_TTL_MS) {
+  if (universeCache && universeCacheFresh()) {
     return universeCache.nseRows;
   }
 
@@ -180,7 +185,7 @@ async function loadNseUniverse(): Promise<UniverseRow[]> {
 }
 
 async function loadBseUniverse(): Promise<UniverseRow[]> {
-  if (universeCache && Date.now() - universeCache.fetchedAt < UNIVERSE_TTL_MS) {
+  if (universeCache && universeCacheFresh()) {
     return universeCache.bseRows;
   }
 
@@ -203,7 +208,7 @@ async function loadBseUniverse(): Promise<UniverseRow[]> {
 }
 
 async function loadUniverse(): Promise<{ rows: UniverseRow[]; nseCount: number; bseCount: number }> {
-  if (universeCache && Date.now() - universeCache.fetchedAt < UNIVERSE_TTL_MS) {
+  if (universeCache && universeCacheFresh()) {
     return {
       rows: [...universeCache.nseRows, ...universeCache.bseRows],
       nseCount: universeCache.nseRows.length,
@@ -217,7 +222,9 @@ async function loadUniverse(): Promise<{ rows: UniverseRow[]; nseCount: number; 
   ]);
   if (!nseRows.length && !bseRows.length) throw new Error("NSE/BSE equity universe returned no parseable rows.");
 
-  universeCache = { nseRows, bseRows, fetchedAt: Date.now() };
+  const fetchedAt = Date.now();
+  const ttl = nseRows.length && bseRows.length ? UNIVERSE_TTL_MS : PARTIAL_UNIVERSE_TTL_MS;
+  universeCache = { nseRows, bseRows, fetchedAt, expiresAt: fetchedAt + ttl };
   return { rows: [...nseRows, ...bseRows], nseCount: nseRows.length, bseCount: bseRows.length };
 }
 

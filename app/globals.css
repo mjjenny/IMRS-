@@ -71,12 +71,6 @@ button:disabled {
   opacity: 0.58;
 }
 
-.disabled-action {
-  cursor: not-allowed;
-  opacity: 0.58;
-  pointer-events: none;
-}
-
 input,
 select,
 textarea {

@@ -4158,7 +4158,6 @@ export default function Home() {
       const reportText = company.codexReports?.[0]?.content || scrubReportText(company.aiOutput);
       const finalReportCount = company.codexReports?.length || 0;
       const reportLoaded = Boolean(reportText.trim());
-      const reportPublished = finalReportCount > 0 || generatedReportAvailable;
       const canFetchReport = Boolean(company.ticker && generatedReportAvailable && !reportFetching);
       const reportActionStatus = reportLoaded
         ? "Final report loaded. PDF export is available."
@@ -4166,7 +4165,7 @@ export default function Home() {
           ? "Checking whether Codex has published the final report..."
           : generatedReportAvailable
             ? "Final report found. Fetch it into this company record."
-            : "Export the rich packet first. The remaining actions unlock after Codex publishes the final report.";
+            : "Export the rich packet first. If Codex gives you a report file before deployment, use Import Final Report as the fallback.";
       return (
         <div className="report-stack">
           <section className="panel report-hero">
@@ -4179,9 +4178,9 @@ export default function Home() {
               <button className="secondary" onClick={exportCodexResearchPacket}>
                 <Download size={17} /> Export Rich Packet
               </button>
-              <label className={`secondary file-label ${reportPublished ? "" : "disabled-action"}`} aria-disabled={!reportPublished}>
+              <label className="secondary file-label">
                 <Upload size={17} /> Import Final Report
-                <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} disabled={!reportPublished} />
+                <input type="file" accept=".txt,.md,.json" onChange={importCodexReport} />
               </label>
               <button className="secondary" onClick={() => fetchGeneratedReport()} disabled={!canFetchReport}>
                 <FileText size={17} /> {reportFetching ? "Fetching" : "Fetch Generated Report"}

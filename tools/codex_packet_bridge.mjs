@@ -5,15 +5,24 @@ import { join, resolve } from "node:path";
 const port = Number(process.env.IMRS_CODEX_BRIDGE_PORT || 43117);
 const repoRoot = resolve(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const inbox = join(repoRoot, "tmp", "codex-inbox");
+const allowedOrigins = new Set([
+  "https://imrs-omega.vercel.app",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000"
+]);
 
 mkdirSync(inbox, { recursive: true });
 
-function sendJson(response, status, payload) {
+function sendJson(request, response, status, payload) {
+  const origin = request.headers.origin;
+  const allowOrigin = allowedOrigins.has(origin) ? origin : "https://imrs-omega.vercel.app";
   response.writeHead(status, {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Private-Network": "true",
+    Vary: "Origin"
   });
   response.end(JSON.stringify(payload));
 }
@@ -27,18 +36,24 @@ function safeFileName(value) {
 }
 
 const server = createServer((request, response) => {
+  const origin = request.headers.origin;
+  if (origin && !allowedOrigins.has(origin)) {
+    sendJson(request, response, 403, { ok: false, error: "Origin not allowed." });
+    return;
+  }
+
   if (request.method === "OPTIONS") {
-    sendJson(response, 200, { ok: true });
+    sendJson(request, response, 200, { ok: true });
     return;
   }
 
   if (request.method === "GET" && request.url === "/health") {
-    sendJson(response, 200, { ok: true, inbox });
+    sendJson(request, response, 200, { ok: true, inbox });
     return;
   }
 
   if (request.method !== "POST" || request.url !== "/packet") {
-    sendJson(response, 404, { ok: false, error: "Unknown route." });
+    sendJson(request, response, 404, { ok: false, error: "Unknown route." });
     return;
   }
 
@@ -53,7 +68,7 @@ const server = createServer((request, response) => {
       const payload = JSON.parse(body);
       const packet = payload.packet;
       if (!packet || packet.packetType !== "IMRS_CODEX_RESEARCH_PACKET") {
-        sendJson(response, 400, { ok: false, error: "Invalid IMRS packet." });
+        sendJson(request, response, 400, { ok: false, error: "Invalid IMRS packet." });
         return;
       }
 
@@ -69,14 +84,14 @@ const server = createServer((request, response) => {
       writeFileSync(latestPath, text, "utf8");
       writeFileSync(promptPath, `Use the staged packet at ${latestPath} and publish the final stock-only IMRS report.\n`, "utf8");
 
-      sendJson(response, 200, {
+      sendJson(request, response, 200, {
         ok: true,
         filePath,
         latestPath,
         prompt: `Use the staged packet at ${latestPath} and publish the final stock-only IMRS report.`
       });
     } catch (error) {
-      sendJson(response, 500, { ok: false, error: error instanceof Error ? error.message : "Could not stage packet." });
+      sendJson(request, response, 500, { ok: false, error: error instanceof Error ? error.message : "Could not stage packet." });
     }
   });
 });
